@@ -39,6 +39,8 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - La **tuerca** (N): pieza extra 3 × 3, un anillo gris con un hueco cuadrado en el centro. Ese
   agujero no se puede rellenar (no hay deslizamiento lateral), así que deja la fila bloqueada hasta
   que se limpien las líneas de encima. Sale con la misma frecuencia que las demás (1 de cada 8).
+- **Pentominós** (piezas de 5 bloques): ver más abajo.
+- **Monominó** 1 × 1 como recompensa por hacer un Tetris: ver más abajo.
 - **Rotación** con _wall kicks_ básicos (pequeños desplazamientos para que la pieza pueda rotar pegada a la pared).
 - **Soft drop** (bajada acelerada) y **hard drop** (caída instantánea).
 - **Pieza fantasma** (_ghost piece_): muestra dónde aterrizará la pieza actual.
@@ -48,6 +50,32 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - **Pausa** y **Game Over** con opción de reinicio.
 - **Modo claro/oscuro**: switch junto al título (por defecto modo oscuro); la preferencia se guarda en `localStorage`.
 - **Power-ups aleatorios** cada 10 líneas completadas (ver más abajo).
+
+---
+
+## Piezas no estándar
+
+### Pentominós (5 bloques)
+
+Cada vez que se genera una pieza hay un **15 %** (`PENTOMINO_CHANCE`) de que salga un pentominó en
+lugar de un tetrominó estándar. Los tres se eligen con igual probabilidad y **rotan en las cuatro
+direcciones** con los mismos _wall kicks_ que el resto.
+
+| Pieza | Forma                                                       | Nota                                                     |
+| ----- | ----------------------------------------------------------- | -------------------------------------------------------- |
+| **+** | Cruz: un bloque central con 4 adyacentes                     | Simétrica: rotarla no cambia su forma                     |
+| **U** | Copa: base de 3 bloques y 2 bloques hacia arriba en los extremos | Deja un hueco central que sólo se rellena desde arriba |
+| **Y** | Línea de 4 bloques con un bloque perpendicular en el segundo | Cuatro orientaciones distintas                            |
+
+### Monominó (1 bloque)
+
+Al limpiar **4 líneas de golpe** (un **Tetris**), la siguiente pieza de la cola se sustituye
+obligatoriamente por un bloque blanco **1 × 1**, pensado para rellenar el hueco difícil que suele
+quedar tras el Tetris. A diferencia de los power-ups, se fusiona con el tablero como cualquier otra
+pieza.
+
+Si en el mismo momento había un power-up pendiente, el monominó pasa primero y el power-up se
+conserva para la pieza siguiente: no se pierde ninguno de los dos.
 
 ---
 
@@ -140,7 +168,7 @@ Aporta el aspecto visual con estética _dark / retro arcade_: fondo oscuro, tipo
 
 Contiene toda la lógica del juego. A grandes rasgos:
 
-- **Modelo del tablero**: una matriz `ROWS × COLS` donde cada celda guarda `0` (vacía) o un índice de color (1–8) que identifica la pieza.
+- **Modelo del tablero**: una matriz `ROWS × COLS` donde cada celda guarda `0` (vacía) o un índice de color (`1–18`) que identifica la pieza.
 - **Piezas**: definidas como matrices cuadradas. Para rotar se calcula la transposición + reverso de filas (`rotateCW`).
 - **Detección de colisiones** (`collide`): comprueba que ninguna celda de la pieza salga del tablero ni se solape con bloques ya fijados.
 - **Wall kicks** (`tryRotate`): si la rotación choca, intenta desplazar la pieza ±1 y ±2 columnas antes de descartar el giro.
@@ -206,11 +234,12 @@ Algunos parámetros fáciles de tunear en `game.js`:
 | `COLS`         | Columnas del tablero                     | `10`                  |
 | `ROWS`         | Filas del tablero                        | `20`                  |
 | `BLOCK`        | Tamaño en píxeles de cada celda          | `30`                  |
-| `COLORS`         | Paleta de colores por tipo de pieza       | 14 colores            |
+| `COLORS`         | Paleta de colores por tipo de pieza       | 18 colores            |
 | `LINE_SCORES`    | Puntos por 1, 2, 3 o 4 líneas eliminadas  | `[0,100,300,500,800]` |
 | `dropInterval`   | Velocidad inicial de caída en ms          | `1000`                |
 | `POWERUP_EVERY`  | Líneas completadas entre power-ups        | `10`                  |
 | `FREEZE_MS`      | Duración del power-up Congelar en ms      | `5000`                |
+| `PENTOMINO_CHANCE` | Probabilidad de que salga un pentominó  | `0.15`                |
 | `POWER_ICONS`    | Emoji dibujado sobre cada power-up        | 💣 ⚡ 🎨 ⬇️ ❄️        |
 
 > Si cambias `COLS`, `ROWS` o `BLOCK`, recuerda ajustar también `width` y `height` del `<canvas id="board">` en `index.html` para que coincida (`COLS × BLOCK` × `ROWS × BLOCK`).

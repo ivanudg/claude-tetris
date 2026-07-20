@@ -20,6 +20,10 @@ const COLORS = [
   '#4db6ac', // 12 - power-up gravedad
   '#90caf9', // 13 - power-up congelar
   '#ffd700', // 14 - comodín (solo celda de tablero)
+  '#f48fb1', // 15 - pentominó + (cruz)
+  '#a5d6a7', // 16 - pentominó U (copa)
+  '#ce93d8', // 17 - pentominó Y
+  '#ffffff', // 18 - monominó 1x1 (recompensa por Tetris)
 ];
 
 const PIECES = [
@@ -38,6 +42,10 @@ const PIECES = [
   [[12]],                                      // power-up gravedad
   [[13]],                                      // power-up congelar
   null,                                        // comodín: nunca se genera como pieza
+  [[0,15,0],[15,15,15],[0,15,0]],              // pentominó + (cruz, invariante al rotar)
+  [[16,0,16],[16,16,16],[0,0,0]],              // pentominó U (copa)
+  [[0,17,0,0],[17,17,17,17],[0,0,0,0],[0,0,0,0]], // pentominó Y (línea de 4 + bump en el 2º)
+  [[18]],                                      // monominó 1x1
 ];
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
@@ -47,6 +55,11 @@ const FIRST_POWER = 9;
 const LAST_POWER = 13;
 const WILDCARD = 14;
 const FREEZE_MS = 5000;
+// Pentominós: sustituyen a un tetrominó estándar con PENTOMINO_CHANCE de probabilidad.
+const PENTOMINOS = [15, 16, 17];
+const PENTOMINO_CHANCE = 0.15;
+// Monominó: recompensa inmediata por un Tetris (4 líneas de golpe).
+const MONOMINO = 18;
 // Iconos por tipo de celda: los 5 power-ups más el comodín, que si no se
 // confundiría con el amarillo de la pieza O.
 const CELL_ICONS = { 9: '💣', 10: '⚡', 11: '🎨', 12: '⬇️', 13: '❄️', 14: '✨' };
@@ -70,7 +83,7 @@ const THEME_KEY = 'tetris-theme';
 const GRID_COLORS = { dark: '#22222e', light: '#d7d7e6' };
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
-let linesSincePowerUp, pendingPowerUp, freezeRemaining;
+let linesSincePowerUp, pendingPowerUp, pendingMonomino, freezeRemaining;
 let theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 let gridColor = GRID_COLORS[theme];
 
@@ -78,19 +91,29 @@ function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
 }
 
-function randomPiece() {
-  const type = Math.floor(Math.random() * 8) + 1;
+function makePiece(type) {
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+}
+
+function randomPiece() {
+  if (Math.random() < PENTOMINO_CHANCE)
+    return makePiece(PENTOMINOS[Math.floor(Math.random() * PENTOMINOS.length)]);
+  return makePiece(Math.floor(Math.random() * 8) + 1);
 }
 
 function isPowerUp(type) {
   return type >= FIRST_POWER && type <= LAST_POWER;
 }
 
+// Bloques que se fusionan con el tablero: tetrominós, tuerca, pentominós y monominó.
+// Excluye power-ups (9-13) y comodín (14).
+function isNormalBlock(type) {
+  return (type >= 1 && type <= 8) || (type >= PENTOMINOS[0] && type <= MONOMINO);
+}
+
 function randomPowerUp() {
-  const type = FIRST_POWER + Math.floor(Math.random() * (LAST_POWER - FIRST_POWER + 1));
-  return { type, shape: [[type]], x: Math.floor(COLS / 2), y: 0 };
+  return makePiece(FIRST_POWER + Math.floor(Math.random() * (LAST_POWER - FIRST_POWER + 1)));
 }
 
 function collide(shape, ox, oy) {
@@ -149,6 +172,7 @@ function clearLines() {
     score += (LINE_SCORES[cleared] || 0) * level;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+    if (cleared === 4) pendingMonomino = true; // Tetris: recompensa con bloque 1x1
     linesSincePowerUp += cleared;
     while (linesSincePowerUp >= POWERUP_EVERY) {
       linesSincePowerUp -= POWERUP_EVERY;
@@ -212,14 +236,14 @@ function powerRay(x, y) {
 }
 
 function powerTint() {
-  const counts = new Array(LAST_POWER + 2).fill(0);
+  const counts = new Array(COLORS.length).fill(0);
   for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++) {
       const v = board[r][c];
-      if (v >= 1 && v <= 8) counts[v]++;
+      if (isNormalBlock(v)) counts[v]++;
     }
   let dominant = 0; // counts[0] siempre 0: gana el primer máximo estricto
-  for (let t = 1; t <= 8; t++) if (counts[t] > counts[dominant]) dominant = t;
+  for (let t = 1; t < counts.length; t++) if (counts[t] > counts[dominant]) dominant = t;
   if (!dominant) return;
   for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++)
@@ -257,7 +281,11 @@ function lockPiece() {
 
 function spawn() {
   current = next;
-  if (pendingPowerUp) {
+  if (pendingMonomino) {
+    // El monominó gana al power-up, pero no consume su flag: sale en el spawn siguiente.
+    pendingMonomino = false;
+    next = makePiece(MONOMINO);
+  } else if (pendingPowerUp) {
     pendingPowerUp = false;
     next = randomPowerUp();
   } else {
@@ -437,6 +465,7 @@ function init() {
   dropAccum = 0;
   linesSincePowerUp = 0;
   pendingPowerUp = false;
+  pendingMonomino = false;
   freezeRemaining = 0;
   lastTime = performance.now();
   next = randomPiece();
