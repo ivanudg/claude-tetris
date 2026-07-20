@@ -25,6 +25,15 @@
         </span>
         <span class="theme-toggle-thumb" aria-hidden="true"></span>
       </button>
+      <button
+        id="mute-toggle"
+        class="mute-toggle"
+        type="button"
+        role="switch"
+        aria-checked="true"
+        aria-label="Silenciar sonido"
+        title="Sonido"
+      >🔊</button>
     </div>
     <div class="game-container">
       <canvas id="board" width="300" height="600"></canvas>
@@ -47,6 +56,13 @@
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
         </div>
+
+        <div id="combo-indicator" class="combo-indicator hidden">
+          <span class="label">COMBO</span>
+          <span class="combo-count" id="combo-count">x2</span>
+        </div>
+
+        <div id="b2b-badge" class="b2b-badge hidden">BACK-TO-BACK</div>
 
         <div id="freeze-indicator" class="freeze-indicator hidden">
           ❄️ <span id="freeze-time"></span>s

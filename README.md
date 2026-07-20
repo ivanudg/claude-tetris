@@ -45,7 +45,8 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - **Soft drop** (bajada acelerada) y **hard drop** (caída instantánea).
 - **Pieza fantasma** (_ghost piece_): muestra dónde aterrizará la pieza actual.
 - **Vista previa** de la siguiente pieza.
-- **Sistema de puntuación** clásico de Tetris (100 / 300 / 500 / 800 multiplicado por nivel).
+- **Sistema de puntuación avanzado**: base clásica (100 / 300 / 500 / 800 × nivel) más combos encadenados, T-Spin, Back-to-Back y Perfect Clear (ver más abajo).
+- **Retroalimentación**: partículas, textos flotantes, _screen shake_, destellos y efectos de sonido sintetizados cuyo tono sube con el combo (botón 🔊 junto al título).
 - **Niveles** que aumentan cada 10 líneas y aceleran la caída.
 - **Pausa** y **Game Over** con opción de reinicio.
 - **Modo claro/oscuro**: switch junto al título (por defecto modo oscuro); la preferencia se guarda en `localStorage`.
@@ -174,10 +175,69 @@ Contiene toda la lógica del juego. A grandes rasgos:
 - **Wall kicks** (`tryRotate`): si la rotación choca, intenta desplazar la pieza ±1 y ±2 columnas antes de descartar el giro.
 - **Game loop** (`loop`): basado en `requestAnimationFrame`, acumula el tiempo transcurrido y baja la pieza una fila cuando se supera `dropInterval`.
 - **Limpieza de líneas** (`clearLines`): recorre el tablero de abajo hacia arriba; cada fila completa se elimina y se inserta una vacía en la cima.
-- **Puntuación**: usa la tabla clásica `[0, 100, 300, 500, 800]` multiplicada por el nivel actual; el hard drop suma 2 puntos por celda recorrida y el soft drop 1 punto por fila.
+- **Puntuación** (`resolveScoring`): parte de la tabla clásica `[0, 100, 300, 500, 800]` y le aplica combo, T-Spin, Back-to-Back y Perfect Clear (ver la sección siguiente). El hard drop suma 2 puntos por celda recorrida y el soft drop 1 punto por fila; ninguno de los dos participa en el combo.
 - **Nivel y velocidad**: el nivel sube cada 10 líneas; la velocidad de caída se calcula como `max(100, 1000 − (level − 1) × 90)` milisegundos.
 - **Ghost piece** (`ghostY`): proyecta la posición final de la pieza actual hacia abajo y la dibuja con `globalAlpha = 0.2`.
 - **Tema** (`applyTheme` / `toggleTheme`): alterna la clase `light` en `<body>`, persiste la preferencia en `localStorage` y fuerza un redibujado inmediato (`draw` + `drawNext`) porque el color de la rejilla del canvas no se puede resolver vía CSS.
+
+### Combos, multiplicadores y bonificaciones
+
+La puntuación de cada limpieza se calcula así:
+
+```
+base   = T-Spin ? TSPIN_SCORES[líneas] : LINE_SCORES[líneas]
+base   = Back-to-Back activo ? floor(base × 1.5) : base
+puntos = (base + 50 × combo) × nivel + bonus de Perfect Clear
+```
+
+**Combo encadenado.** El contador arranca en la primera pieza que limpia al menos una línea y sube
+`+1` con cada pieza consecutiva que vuelva a limpiar. El HUD lo muestra como `x2`, `x3`… (combo `N`
+se muestra como `x(N+1)`). Se reinicia en el instante en que una pieza se bloquea sin limpiar nada.
+Un power-up que se consume sin limpiar **no** rompe el combo: no es un fallo del jugador.
+
+**T-Spin.** Se detecta con la regla de las 3 esquinas: si la pieza `T` se bloquea con al menos 3 de
+las 4 diagonales de su centro ocupadas (las paredes cuentan como ocupadas) **y** la última acción del
+jugador fue una rotación, la jugada puntúa con `TSPIN_SCORES` en lugar de `LINE_SCORES`. Mover o
+bajar la pieza tras rotar invalida el T-Spin. Un T-Spin logrado con _wall kick_ y solo 3 esquinas se
+clasifica como **mini** y usa una tabla reducida.
+
+**Back-to-Back.** Una jugada "difícil" es un Tetris (4 líneas) o cualquier T-Spin con líneas. Si dos
+jugadas difíciles se encadenan sin ninguna limpieza fácil entre medias, la base se multiplica por
+`1.5`. Una limpieza de 1–3 líneas sin T-Spin rompe la cadena; una pieza que no limpia nada solo rompe
+el combo, no el B2B.
+
+**Perfect Clear.** Si tras limpiar el tablero queda completamente vacío, se suma un bonus fijo
+adicional (`PERFECT_SCORES × nivel`, y `3200 × nivel` en un Tetris encadenado por B2B). Ojo: los
+comodines y la tuerca son bloques normales del tablero, así que cualquier resto impide el Perfect Clear.
+
+| Jugada                          | Puntos base                    |
+| ------------------------------- | ------------------------------ |
+| 1 / 2 / 3 / 4 líneas            | 100 / 300 / 500 / 800          |
+| T-Spin con 0 / 1 / 2 / 3 líneas | 400 / 800 / 1200 / 1600        |
+| Mini T-Spin                     | 100 / 200 / 400                |
+| Bonus por nivel de combo        | 50 × combo                     |
+| Back-to-Back                    | × 1.5 sobre la base            |
+| Perfect Clear (1–4 líneas)      | 800 / 1200 / 1800 / 2000       |
+| Perfect Clear de Tetris con B2B | 3200                           |
+
+Todo lo anterior se multiplica además por el nivel actual.
+
+### Retroalimentación
+
+`resolveScoring()` no dibuja ni suena: emite eventos (`line-clear`, `combo`, `tetris`, `tspin`,
+`b2b`, `perfect-clear`, `combo-break`, `game-over`) a `emitEvent()`, el único punto que los traduce
+en efectos. Los efectos se dibujan sobre el canvas del juego y avanzan con el `dt` del bucle, así que
+la pausa no los consume:
+
+- **Partículas** (`spawnParticles`): una ráfaga por celda de cada fila limpiada, con su color real.
+  Limitadas a `MAX_PARTICLES` para no hundir los FPS.
+- **Textos flotantes** (`spawnFloatText`): `+puntos`, `COMBO xN`, `TETRIS`, `T-SPIN`, `BACK-TO-BACK`,
+  `PERFECT CLEAR!`.
+- **Screen shake** y **destello** de pantalla, con intensidad proporcional a la jugada.
+- **Sonido** sintetizado con la Web Audio API (sin ficheros de audio). El tono sube un semitono por
+  nivel de combo, hasta una octava. El `AudioContext` se crea en la primera pulsación de tecla
+  porque los navegadores bloquean el autoplay. El botón 🔊 silencia y guarda la preferencia en
+  `localStorage`.
 
 ### Flujo del juego
 
@@ -236,6 +296,11 @@ Algunos parámetros fáciles de tunear en `game.js`:
 | `BLOCK`        | Tamaño en píxeles de cada celda          | `30`                  |
 | `COLORS`         | Paleta de colores por tipo de pieza       | 18 colores            |
 | `LINE_SCORES`    | Puntos por 1, 2, 3 o 4 líneas eliminadas  | `[0,100,300,500,800]` |
+| `TSPIN_SCORES`   | Puntos de un T-Spin por líneas            | `[400,800,1200,1600]` |
+| `COMBO_UNIT`     | Puntos por nivel de combo                 | `50`                  |
+| `B2B_MULTIPLIER` | Multiplicador de Back-to-Back             | `1.5`                 |
+| `PERFECT_SCORES` | Bonus de Perfect Clear por líneas         | `[0,800,1200,1800,2000]` |
+| `MAX_PARTICLES`  | Tope de partículas simultáneas            | `300`                 |
 | `dropInterval`   | Velocidad inicial de caída en ms          | `1000`                |
 | `POWERUP_EVERY`  | Líneas completadas entre power-ups        | `10`                  |
 | `FREEZE_MS`      | Duración del power-up Congelar en ms      | `5000`                |

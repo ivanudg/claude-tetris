@@ -24,6 +24,9 @@
   --accent-color-contrast: #0f0f17;
   --accent-hover: #9bbdff;
   --accent-glow: rgba(122, 162, 247, 0.5);
+  --combo-color: #ffd166;
+  --combo-glow: rgba(255, 209, 102, 0.5);
+  --b2b-color: #ff9f1c;
 }
 
 body.light {
@@ -46,6 +49,9 @@ body.light {
   --accent-color-contrast: #ffffff;
   --accent-hover: #5c7cfa;
   --accent-glow: rgba(59, 91, 219, 0.35);
+  --combo-color: #d97706;
+  --combo-glow: rgba(217, 119, 6, 0.3);
+  --b2b-color: #c2410c;
 }
 
 body {
@@ -250,6 +256,82 @@ kbd {
 
 .freeze-indicator.hidden {
   display: none;
+}
+
+/* ---- Combo y back-to-back ---- */
+.combo-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+
+.combo-indicator.hidden {
+  display: none;
+}
+
+.combo-count {
+  font-family: 'Courier New', monospace;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--combo-color);
+  text-shadow: 0 0 12px var(--combo-glow);
+}
+
+.combo-indicator.pulse .combo-count {
+  animation: combo-pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes combo-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.45); }
+  100% { transform: scale(1); }
+}
+
+.b2b-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-align: center;
+  padding: 4px 0;
+  border-radius: 4px;
+  color: var(--b2b-color);
+  border: 1px solid var(--b2b-color);
+  animation: b2b-glow 1.6s ease-in-out infinite;
+}
+
+.b2b-badge.hidden {
+  display: none;
+}
+
+@keyframes b2b-glow {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* ---- Toggle de sonido ---- */
+.mute-toggle {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.mute-toggle:hover {
+  border-color: var(--accent);
+}
+
+.mute-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ---- Overlay ---- */
