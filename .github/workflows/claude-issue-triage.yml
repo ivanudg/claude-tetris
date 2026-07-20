@@ -92,6 +92,11 @@ jobs:
               implemente el cambio sin volver a investigar.
             - **Riesgos / invariantes a no romper**.
             - **Confianza** — alta / media / baja. Si es baja, di qué falta por aclarar.
+            - **Diagnóstico del workflow** (sección temporal, para depurar la allowlist) —
+              lista TODAS las llamadas a herramientas que te fueron denegadas por permisos
+              durante esta ejecución, con el nombre exacto de la herramienta y el comando
+              literal que intentaste. Si no hubo ninguna, escribe "sin denegaciones".
+              No incluyas aquí valores de variables de entorno ni tokens.
 
             Si EVENT_ACTION es `edited` y ya existe un comentario de diagnóstico previo tuyo,
             titula el nuevo comentario "Diagnóstico actualizado" y señala qué cambió respecto
