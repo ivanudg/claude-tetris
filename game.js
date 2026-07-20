@@ -68,6 +68,27 @@ const MONOMINO = 18;
 // confundiría con el amarillo de la pieza O.
 const CELL_ICONS = { 9: '💣', 10: '⚡', 11: '🎨', 12: '⬇️', 13: '❄️', 14: '✨' };
 
+// ---------------------------------------------------------------------------
+// Habilidades cargables: la energía se llena limpiando líneas y se gasta desde
+// el menú de habilidades (tecla E), que congela la partida mientras está abierto.
+// ---------------------------------------------------------------------------
+
+const ENERGY_MAX = 100;
+const ENERGY_GAIN = [0, 10, 25, 45, 70]; // energía por líneas simultáneas
+
+const SKILLS = [
+  { id: 'vision', key: 'Digit1', icon: '👁', name: 'Visión de Futuro', cost: 25, color: '#4dd0e1' },
+  { id: 'swap', key: 'Digit2', icon: '🔄', name: 'Intercambio de Pool', cost: 30, color: '#ba68c8' },
+  { id: 'slow', key: 'Digit3', icon: '⏳', name: 'Distorsión Temporal', cost: 45, color: '#90caf9' },
+  { id: 'rewind', key: 'Digit4', icon: '↩', name: 'Rebobinar', cost: 70, color: '#ffd54f' },
+  { id: 'hold', key: 'Digit5', icon: '🎒', name: 'Reserva Táctica', cost: 15, color: '#81c784' },
+];
+
+const QUEUE_MAX = 5;      // piezas precalculadas; la Visión enseña las 5
+const VISION_PIECES = 10; // piezas durante las que la cola queda ampliada
+const SLOW_MS = 10000;
+const SLOW_FACTOR = 0.25; // 25% de velocidad de caída => intervalo x4
+
 const T_PIECE = 3;
 // Un T-Spin sustituye a LINE_SCORES (no se suma): indexado por líneas limpiadas.
 const TSPIN_SCORES = [400, 800, 1200, 1600];
@@ -167,11 +188,26 @@ const objectiveLinesEl = document.getElementById('objective-lines');
 const objectiveGarbageRow = document.getElementById('objective-garbage-row');
 const objectiveGarbageEl = document.getElementById('objective-garbage');
 const mutatorBadges = document.getElementById('mutator-badges');
+const holdCanvas = document.getElementById('hold-canvas');
+const holdCtx = holdCanvas.getContext('2d');
+const energyBar = document.getElementById('energy-bar');
+const energyFill = document.getElementById('energy-fill');
+const energyValueEl = document.getElementById('energy-value');
+const visionBadge = document.getElementById('vision-badge');
+const visionCountEl = document.getElementById('vision-count');
+const slowBadge = document.getElementById('slow-badge');
+const slowTimeEl = document.getElementById('slow-time');
+const skillMenu = document.getElementById('skill-menu');
+const skillList = document.getElementById('skill-list');
+const skillEnergyFill = document.getElementById('skill-energy-fill');
+const skillEnergyValueEl = document.getElementById('skill-energy-value');
 
 const THEME_KEY = 'tetris-theme';
 const GRID_COLORS = { dark: '#22222e', light: '#d7d7e6' };
 
-let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+// `queue` sustituye a la antigua variable `next`: la Visión de Futuro necesita
+// tener QUEUE_MAX piezas ya generadas. queue[0] es la pieza siguiente.
+let board, current, queue, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let linesSincePowerUp, pendingPowerUp, pendingMonomino, freezeRemaining;
 // Combo y bonificaciones. `combo` vale -1 sin combo activo y 0 en la primera
 // limpieza: el bonus solo aplica desde combo >= 1 (convención estándar).
@@ -189,6 +225,11 @@ let challenge = cloneChallenge(CHALLENGE_DEFAULTS);
 let timeRemaining, garbageAccum, warnedTime, won;
 // Lock delay de la pieza activa. `lockTimer > 0` significa "apoyada".
 let lockTimer, lockResets;
+// Habilidades. `undoSnapshot` guarda el estado previo al último bloqueo (un
+// solo nivel: Rebobinar no se encadena). `holdType` es un tipo, no una pieza:
+// la pieza se reconstruye con makePiece().
+let energy, holdType, visionRemaining, slowRemaining, undoSnapshot, skillMenuOpen, energyWasFull;
+let shownEnergy = -1; // última energía pintada: el HUD se refresca cada frame
 let theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 let gridColor = GRID_COLORS[theme];
 
@@ -380,6 +421,7 @@ function resolveScoring({ cleared, spin, perfect, isPower, rows }) {
 
   score += gained;
   lines += cleared;
+  addEnergy(ENERGY_GAIN[Math.min(cleared, ENERGY_GAIN.length - 1)]);
   level = Math.floor(lines / 10) + 1;
   dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   if (cleared === 4) pendingMonomino = true; // Tetris: recompensa con bloque 1x1
@@ -526,7 +568,190 @@ function checkObjective() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Habilidades cargables: recurso, catálogo de efectos y menú de activación.
+// ---------------------------------------------------------------------------
+
+function addEnergy(amount) {
+  energy = Math.min(ENERGY_MAX, energy + amount);
+  if (energy >= ENERGY_MAX && !energyWasFull) emitEvent('energy-full', {});
+  energyWasFull = energy >= ENERGY_MAX;
+}
+
+function clonePiece(p) {
+  return { type: p.type, shape: p.shape.map(row => [...row]), x: p.x, y: p.y };
+}
+
+// Estado justo antes de consolidar la pieza. Un solo nivel: Rebobinar no se
+// encadena. No guarda los relojes del desafío: rebobinar deshace el tablero,
+// no el tiempo transcurrido.
+function takeSnapshot() {
+  undoSnapshot = {
+    board: board.map(row => [...row]),
+    piece: clonePiece(current),
+    queue: queue.map(clonePiece),
+    score, lines, level, dropInterval,
+    combo, maxCombo, backToBack,
+    linesSincePowerUp, pendingPowerUp, pendingMonomino,
+    holdType,
+  };
+}
+
+function restoreSnapshot() {
+  const s = undoSnapshot;
+  board = s.board.map(row => [...row]);
+  current = clonePiece(s.piece);
+  queue = s.queue.map(clonePiece);
+  score = s.score;
+  lines = s.lines;
+  level = s.level;
+  dropInterval = s.dropInterval;
+  combo = s.combo;
+  maxCombo = s.maxCombo;
+  backToBack = s.backToBack;
+  linesSincePowerUp = s.linesSincePowerUp;
+  pendingPowerUp = s.pendingPowerUp;
+  pendingMonomino = s.pendingMonomino;
+  holdType = s.holdType;
+  lockTimer = 0;
+  lockResets = 0;
+  dropAccum = 0;
+  lastActionWasRotation = false;
+  lastKick = 0;
+  shownCombo = -1;
+  undoSnapshot = null; // sin encadenar rebobinados
+}
+
+// La Distorsión Temporal no toca `dropInterval`: resolveScoring() lo recalcula
+// por nivel y se llevaría el efecto por delante.
+function effectiveDropInterval() {
+  return slowRemaining > 0 ? dropInterval / SLOW_FACTOR : dropInterval;
+}
+
+function skillById(id) {
+  return SKILLS.find(s => s.id === id);
+}
+
+function canUseSkill(skill) {
+  if (energy < skill.cost) return false;
+  if (skill.id === 'rewind' && !undoSnapshot) return false;
+  return true;
+}
+
+// Ejecuta el efecto. Devuelve false si la habilidad no llegó a aplicarse:
+// quien llama no cobra la energía en ese caso.
+function useSkill(id) {
+  switch (id) {
+    case 'vision':
+      visionRemaining = VISION_PIECES;
+      drawNext();
+      return true;
+
+    case 'swap': {
+      const piece = randomPiece();
+      // Sin sitio arriba la habilidad no se gasta: no debe poder matar al jugador.
+      if (collide(piece.shape, piece.x, piece.y)) return false;
+      current = piece;
+      lockTimer = 0;
+      lockResets = 0;
+      dropAccum = 0;
+      lastActionWasRotation = false;
+      lastKick = 0;
+      return true;
+    }
+
+    case 'slow':
+      slowRemaining = SLOW_MS;
+      return true;
+
+    case 'rewind':
+      if (!undoSnapshot) return false;
+      restoreSnapshot();
+      drawNext();
+      drawHold();
+      return true;
+
+    case 'hold': {
+      const stored = holdType;
+      holdType = current.type;
+      if (stored === null) {
+        current = queue.shift();
+        refillQueue();
+      } else {
+        current = makePiece(stored);
+      }
+      lockTimer = 0;
+      lockResets = 0;
+      dropAccum = 0;
+      lastActionWasRotation = false;
+      lastKick = 0;
+      // La pieza recuperada puede no caber si el tablero llegó al techo.
+      if (collide(current.shape, current.x, current.y)) { endGame(); return true; }
+      drawNext();
+      drawHold();
+      return true;
+    }
+  }
+  return false;
+}
+
+function activateSkill(id) {
+  const skill = skillById(id);
+  if (!skill || !canUseSkill(skill)) return;
+  if (!useSkill(id)) return; // efecto abortado: no se cobra
+  energy -= skill.cost;
+  energyWasFull = energy >= ENERGY_MAX;
+  emitEvent('skill-use', { skill });
+  updateHUD();
+  closeSkillMenu();
+}
+
+function renderSkillMenu() {
+  skillList.innerHTML = '';
+  for (let i = 0; i < SKILLS.length; i++) {
+    const skill = SKILLS[i];
+    const li = document.createElement('li');
+    li.classList.toggle('disabled', !canUseSkill(skill));
+    li.innerHTML =
+      `<kbd>${i + 1}</kbd>` +
+      `<span class="skill-icon">${skill.icon}</span>` +
+      `<span>${skill.name}</span>` +
+      `<span class="skill-cost">${skill.cost}</span>`;
+    li.addEventListener('click', () => activateSkill(skill.id));
+    skillList.appendChild(li);
+  }
+  const pct = (energy / ENERGY_MAX) * 100;
+  skillEnergyFill.style.width = `${pct}%`;
+  skillEnergyValueEl.textContent = `${energy} / ${ENERGY_MAX}`;
+}
+
+function openSkillMenu() {
+  if (paused || gameOver || skillMenuOpen) return;
+  draw(); // deja el último fotograma pintado bajo el overlay
+  skillMenuOpen = true;
+  cancelAnimationFrame(animId);
+  renderSkillMenu();
+  skillMenu.classList.remove('hidden');
+}
+
+function closeSkillMenu() {
+  if (!skillMenuOpen) return;
+  skillMenu.classList.add('hidden');
+  skillMenuOpen = false;
+  if (gameOver || paused) return; // una habilidad pudo terminar la partida
+  // Reiniciar lastTime es obligatorio: si no, el primer dt sería enorme.
+  lastTime = performance.now();
+  loop(lastTime);
+}
+
+function handleSkillMenuKey(e) {
+  if (e.code === 'Escape' || e.code === 'KeyE') { closeSkillMenu(); return; }
+  const skill = SKILLS.find(s => s.key === e.code);
+  if (skill) activateSkill(skill.id);
+}
+
 function lockPiece() {
+  takeSnapshot(); // lo primero: Rebobinar revierte a este instante exacto
   const spin = detectSpin(); // antes del merge: lee el tablero sin la pieza
   applyWildcards();
   const isPower = isPowerUp(current.type);
@@ -541,27 +766,37 @@ function lockPiece() {
   spawn();
 }
 
+// Rellena la cola hasta QUEUE_MAX. Solo añade por el final: las piezas ya
+// visibles con la Visión de Futuro no deben cambiar.
+function refillQueue() {
+  while (queue.length < QUEUE_MAX) queue.push(randomPiece());
+}
+
 function spawn() {
-  current = next;
+  current = queue.shift();
   lastActionWasRotation = false;
   lastKick = 0;
   lockTimer = 0;
   lockResets = 0;
+  // Los flags pendientes se insertan al frente de lo que queda de cola, es
+  // decir en la posición que antes ocupaba `next`: la recompensa sigue saliendo
+  // un spawn más tarde, igual que antes de existir la cola.
   if (pendingMonomino) {
     // El monominó gana al power-up, pero no consume su flag: sale en el spawn siguiente.
     pendingMonomino = false;
-    next = makePiece(MONOMINO);
+    queue.unshift(makePiece(MONOMINO));
   } else if (pendingPowerUp) {
     pendingPowerUp = false;
-    next = randomPowerUp();
-  } else {
-    next = randomPiece();
+    queue.unshift(randomPowerUp());
   }
+  refillQueue();
+  if (visionRemaining > 0) visionRemaining--;
   if (collide(current.shape, current.x, current.y)) {
     endGame();
     return;
   }
   drawNext();
+  drawHold();
 }
 
 function updateHUD() {
@@ -582,6 +817,19 @@ function updateHUD() {
   }
   shownCombo = combo;
   b2bBadge.classList.toggle('hidden', !backToBack);
+  // La energía no cambia cada frame: escribir solo cuando cambia evita repintar
+  // la barra mientras el tablero está congelado.
+  if (energy !== shownEnergy) {
+    energyFill.style.width = `${(energy / ENERGY_MAX) * 100}%`;
+    energyValueEl.textContent = `${energy} / ${ENERGY_MAX}`;
+    energyBar.classList.toggle('full', energy >= ENERGY_MAX);
+    shownEnergy = energy;
+  }
+  visionBadge.classList.toggle('hidden', visionRemaining <= 0);
+  if (visionRemaining > 0) visionCountEl.textContent = visionRemaining;
+  const slow = slowRemaining > 0;
+  slowBadge.classList.toggle('hidden', !slow);
+  if (slow) slowTimeEl.textContent = (slowRemaining / 1000).toFixed(1);
   updateObjectiveHUD();
 }
 
@@ -864,6 +1112,15 @@ function emitEvent(name, data) {
     case 'combo-break':
       if (data.combo >= 1) playTone(110, 0.2, 'square', 0.07);
       break;
+    case 'skill-use':
+      addFlash(data.skill.color);
+      spawnFloatText(`${data.skill.icon} ${data.skill.name.toUpperCase()}`, Math.floor(ROWS / 3), data.skill.color, 20);
+      playSweep(330, 880, 0.25, 'triangle', 0.1);
+      break;
+    case 'energy-full':
+      spawnFloatText('⚡ ENERGÍA AL 100%', Math.floor(ROWS / 4), '#4dd0e1', 22);
+      [659.25, 987.77].forEach((f, i) => playTone(f, 0.2, 'triangle', 0.09, i * 0.09));
+      break;
     case 'game-over':
       playSweep(440, 60, 0.9, 'sawtooth', 0.12);
       break;
@@ -926,17 +1183,40 @@ function draw() {
   ctx.restore();
 }
 
-function drawNext() {
-  const NB = 30;
-  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
-  const shape = next.shape;
+// Pinta una pieza centrada en una caja lógica 4x4 cuya esquina está en (px, py).
+function drawPieceBox(context, piece, px, py, NB) {
+  const shape = piece.shape;
   const offX = Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
+  context.save();
+  context.translate(px, py);
   for (let r = 0; r < shape.length; r++)
     for (let c = 0; c < shape[r].length; c++) {
-      drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
-      drawCellIcon(nextCtx, offX + c, offY + r, shape[r][c], NB);
+      drawBlock(context, offX + c, offY + r, shape[r][c], NB);
+      drawCellIcon(context, offX + c, offY + r, shape[r][c], NB);
     }
+  context.restore();
+}
+
+// Sin Visión de Futuro: una sola pieza a 30 px, como siempre. Con Visión, la
+// cola entera: la primera grande y las cuatro restantes a media escala en una
+// rejilla 2x2 debajo (apilarlas en columna estiraría el panel 120 px de más).
+function drawNext() {
+  const vision = visionRemaining > 0;
+  const height = vision ? 240 : 120;
+  // Asignar height limpia el canvas: solo se toca cuando cambia de verdad.
+  if (nextCanvas.height !== height) nextCanvas.height = height;
+  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+  drawPieceBox(nextCtx, queue[0], 0, 0, 30);
+  if (!vision) return;
+  for (let i = 1; i < QUEUE_MAX; i++)
+    drawPieceBox(nextCtx, queue[i], ((i - 1) % 2) * 60, 120 + Math.floor((i - 1) / 2) * 60, 15);
+}
+
+function drawHold() {
+  holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+  if (holdType === null) return;
+  drawPieceBox(holdCtx, makePiece(holdType), 0, 0, 30);
 }
 
 const END_TITLES = {
@@ -1069,6 +1349,12 @@ function loop(ts) {
     updateHUD();
   } else {
     dropAccum += dt;
+    // Distorsión Temporal: también por dt, para que ni ❄️ ni la pausa se coman
+    // los 10 segundos del efecto.
+    if (slowRemaining > 0) {
+      slowRemaining = Math.max(0, slowRemaining - dt);
+      updateHUD();
+    }
     // Los relojes del desafío corren aquí dentro: ❄️ los detiene igual que
     // la pausa, y por dt, nunca por reloj de pared.
     tickChallenge(dt);
@@ -1078,7 +1364,7 @@ function loop(ts) {
   // Lock delay: la pieza apoyada espera antes de consolidarse.
   if (!collide(current.shape, current.x, current.y + 1)) {
     lockTimer = 0;
-    if (dropAccum >= dropInterval) {
+    if (dropAccum >= effectiveDropInterval()) {
       dropAccum = 0;
       current.y++;
       lastActionWasRotation = false; // la caída por gravedad invalida el T-Spin
@@ -1115,6 +1401,16 @@ function init() {
   lastKick = 0;
   lockTimer = 0;
   lockResets = 0;
+  // Habilidades
+  energy = 0;
+  shownEnergy = -1;
+  energyWasFull = false;
+  holdType = null;
+  visionRemaining = 0;
+  slowRemaining = 0;
+  undoSnapshot = null;
+  skillMenuOpen = false;
+  skillMenu.classList.add('hidden');
   // Estado del desafío. `challenge` no se resetea: lo fija startGame().
   timeRemaining = challenge.mode === 'timeAttack' ? challenge.timeLimitMs : 0;
   garbageAccum = 0;
@@ -1126,8 +1422,10 @@ function init() {
   shakeMagnitude = 0;
   flashRemaining = 0;
   lastTime = performance.now();
-  next = randomPiece();
+  queue = [];
+  refillQueue();
   spawn();
+  drawHold();
   updateMutatorBadges();
   updateHUD();
   overlay.classList.add('hidden');
@@ -1137,6 +1435,8 @@ function init() {
 
 document.addEventListener('keydown', e => {
   ensureAudio(); // primer gesto del usuario: desbloquea el AudioContext
+  // El menú de habilidades captura el teclado entero: la partida está congelada.
+  if (skillMenuOpen) { handleSkillMenuKey(e); return; }
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
@@ -1168,6 +1468,9 @@ document.addEventListener('keydown', e => {
     case 'Space':
       e.preventDefault();
       hardDrop();
+      break;
+    case 'KeyE':
+      openSkillMenu();
       break;
   }
   updateHUD();

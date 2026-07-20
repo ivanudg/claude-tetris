@@ -71,8 +71,24 @@
         <div id="mutator-badges" class="mutator-badges hidden"></div>
 
         <div class="panel-section">
+          <span class="label">ENERGÍA</span>
+          <div class="energy-bar" id="energy-bar">
+            <div class="energy-fill" id="energy-fill"></div>
+          </div>
+          <span class="energy-value" id="energy-value">0 / 100</span>
+        </div>
+
+        <div id="vision-badge" class="skill-badge hidden">👁 <span id="vision-count"></span> piezas</div>
+        <div id="slow-badge" class="skill-badge hidden">⏳ <span id="slow-time"></span>s</div>
+
+        <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
+        </div>
+
+        <div class="panel-section">
+          <span class="label">RESERVA</span>
+          <canvas id="hold-canvas" width="120" height="120"></canvas>
         </div>
 
         <div id="combo-indicator" class="combo-indicator hidden">
@@ -105,6 +121,7 @@
             <li><kbd>Z</kbd> rotar al revés</li>
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
+            <li><kbd>E</kbd> habilidades</li>
             <li><kbd>P</kbd> pausa</li>
           </ul>
         </div>
@@ -135,6 +152,21 @@
         </div>
 
         <button id="restart-btn">Jugar</button>
+      </div>
+    </div>
+
+    <!-- Overlay propio: #overlay ya despacha tres estados desde restartBtn. -->
+    <div id="skill-menu" class="overlay skill-menu hidden">
+      <div class="overlay-box">
+        <p class="skill-menu-title">HABILIDADES</p>
+        <div class="skill-energy">
+          <div class="energy-bar">
+            <div class="energy-fill" id="skill-energy-fill"></div>
+          </div>
+          <span class="energy-value" id="skill-energy-value">0 / 100</span>
+        </div>
+        <ul id="skill-list" class="skill-list"></ul>
+        <p class="skill-hint">1–5 para activar · <kbd>Esc</kbd> volver</p>
       </div>
     </div>
   </div>

@@ -27,6 +27,8 @@
   --combo-color: #ffd166;
   --combo-glow: rgba(255, 209, 102, 0.5);
   --b2b-color: #ff9f1c;
+  --energy-color: #4dd0e1;
+  --energy-glow: rgba(77, 208, 225, 0.5);
 }
 
 body.light {
@@ -52,6 +54,8 @@ body.light {
   --combo-color: #d97706;
   --combo-glow: rgba(217, 119, 6, 0.3);
   --b2b-color: #c2410c;
+  --energy-color: #0e7490;
+  --energy-glow: rgba(14, 116, 144, 0.35);
 }
 
 body {
@@ -187,12 +191,132 @@ body.light .theme-toggle-thumb {
   transition: color 0.2s ease;
 }
 
-#next-canvas {
+#next-canvas,
+#hold-canvas {
   display: block;
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: 4px;
   transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+/* ---- Barra de energía ---- */
+.energy-bar {
+  height: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.energy-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--energy-color));
+  transition: width 0.25s ease;
+}
+
+/* Barra llena: mismo latido que el distintivo de back-to-back. */
+.energy-bar.full {
+  border-color: var(--energy-color);
+  box-shadow: 0 0 10px var(--energy-glow);
+  animation: b2b-glow 1.6s ease-in-out infinite;
+}
+
+.energy-value {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--value-color);
+}
+
+.skill-badge {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--energy-color);
+  letter-spacing: 0.5px;
+}
+
+.skill-badge.hidden {
+  display: none;
+}
+
+/* ---- Menú de habilidades ---- */
+/* Fijo al viewport, no al wrapper: con la Visión de Futuro el panel crece y un
+   overlay absoluto quedaría centrado muy por debajo del tablero. */
+.skill-menu {
+  position: fixed;
+}
+
+.skill-menu.hidden {
+  display: none;
+}
+
+.skill-menu-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: var(--energy-color);
+}
+
+.skill-energy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 260px;
+}
+
+.skill-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 260px;
+}
+
+.skill-list li {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.skill-list li:hover {
+  border-color: var(--accent);
+}
+
+.skill-list li.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: var(--border);
+}
+
+.skill-list .skill-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.skill-list .skill-cost {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 700;
+  color: var(--energy-color);
+}
+
+.skill-hint {
+  font-size: 11px;
+  color: var(--controls-color);
 }
 
 /* ---- Controles ---- */
