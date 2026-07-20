@@ -112,7 +112,7 @@ La congelación se descuenta con el `dt` del game loop, no con el reloj del sist
 ## Habilidades y barra de energía
 
 Cada limpieza de líneas carga la **barra de energía** (máximo 100). Con `E` se abre el **menú de
-habilidades**, que congela la partida mientras eliges: `1`–`5` o clic activan, `Esc` vuelve al juego.
+habilidades**, que congela la partida mientras eliges: `1`–`4` o clic activan, `Esc` vuelve al juego.
 Las opciones sin energía suficiente salen atenuadas.
 
 | Energía ganada | 1 línea | 2 líneas | 3 líneas | Tetris |
@@ -125,11 +125,25 @@ Las opciones sin energía suficiente salen atenuadas.
 | `2`   | 🔄 **Intercambio de Pool** | 30  | Sustituye la pieza activa por otra aleatoria, otra vez arriba. Si no cabe, no se gasta energía.           |
 | `3`   | ⏳ **Distorsión Temporal** | 45  | La caída automática baja al **25 %** durante 10 segundos. Los controles responden igual de rápido.        |
 | `4`   | ↩ **Rebobinar**          | 70    | Deshace la **última pieza consolidada**: tablero, puntuación, líneas, nivel, combo y cola vuelven atrás.  |
-| `5`   | 🎒 **Reserva Táctica**    | 15    | Guarda la pieza activa; si ya había una guardada, se intercambian.                                        |
 
 El Rebobinar guarda **un solo nivel** de historial (no se encadena) y se toma justo antes de que la
 pieza se consolide, así que la pieza vuelve exactamente donde estaba. La Distorsión Temporal se
 descuenta con el `dt` del loop: ni la pausa ni ❄️ consumen sus 10 segundos.
+
+---
+
+## Reserva de pieza (hold)
+
+Con `C` o `Shift` la pieza activa pasa al panel **RESERVA**. Es gratis, instantáneo y no gasta
+energía.
+
+- **Reserva vacía**: la pieza activa se guarda y entra la siguiente de la cola.
+- **Reserva ocupada**: las dos piezas se intercambian. La recuperada aparece arriba con su
+  **rotación y posición iniciales** — la reserva guarda el tipo de pieza, no su estado.
+
+**Un solo uso por pieza caída.** Después de reservar, la función queda bloqueada y el panel se
+atenúa en escala de grises hasta que la pieza actual se consolide en el tablero y aparezca una
+nueva. Todas las piezas son reservables, incluidos power-ups, pentominós y el monominó.
 
 ---
 
@@ -210,8 +224,9 @@ Después abre `http://localhost:8000` en el navegador.
 | `Z`       | Rotar en sentido antihorario      |
 | `↓`       | Soft drop (bajar más rápido)      |
 | `Espacio` | Hard drop (caída instantánea)     |
+| `C` o `Shift` | Reservar la pieza activa (hold)   |
 | `E`       | Abrir / cerrar el menú de habilidades |
-| `1`–`5`   | Activar una habilidad (con el menú abierto) |
+| `1`–`4`   | Activar una habilidad (con el menú abierto) |
 | `P`       | Pausar / reanudar                 |
 
 Con el modificador **rotación inversa** activo, `↑`/`X` y `Z` intercambian su sentido.

@@ -200,6 +200,19 @@ body.light .theme-toggle-thumb {
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
+/* Hold consumido en este turno: el panel se atenúa hasta el siguiente spawn. */
+#hold-panel {
+  transition: opacity 0.2s ease;
+}
+
+#hold-panel.locked {
+  opacity: 0.35;
+}
+
+#hold-panel.locked #hold-canvas {
+  filter: grayscale(1);
+}
+
 /* ---- Barra de energía ---- */
 .energy-bar {
   height: 12px;

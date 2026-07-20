@@ -81,7 +81,6 @@ const SKILLS = [
   { id: 'swap', key: 'Digit2', icon: '🔄', name: 'Intercambio de Pool', cost: 30, color: '#ba68c8' },
   { id: 'slow', key: 'Digit3', icon: '⏳', name: 'Distorsión Temporal', cost: 45, color: '#90caf9' },
   { id: 'rewind', key: 'Digit4', icon: '↩', name: 'Rebobinar', cost: 70, color: '#ffd54f' },
-  { id: 'hold', key: 'Digit5', icon: '🎒', name: 'Reserva Táctica', cost: 15, color: '#81c784' },
 ];
 
 const QUEUE_MAX = 5;      // piezas precalculadas; la Visión enseña las 5
@@ -188,6 +187,7 @@ const objectiveLinesEl = document.getElementById('objective-lines');
 const objectiveGarbageRow = document.getElementById('objective-garbage-row');
 const objectiveGarbageEl = document.getElementById('objective-garbage');
 const mutatorBadges = document.getElementById('mutator-badges');
+const holdPanel = document.getElementById('hold-panel');
 const holdCanvas = document.getElementById('hold-canvas');
 const holdCtx = holdCanvas.getContext('2d');
 const energyBar = document.getElementById('energy-bar');
@@ -227,8 +227,9 @@ let timeRemaining, garbageAccum, warnedTime, won;
 let lockTimer, lockResets;
 // Habilidades. `undoSnapshot` guarda el estado previo al último bloqueo (un
 // solo nivel: Rebobinar no se encadena). `holdType` es un tipo, no una pieza:
-// la pieza se reconstruye con makePiece().
-let energy, holdType, visionRemaining, slowRemaining, undoSnapshot, skillMenuOpen, energyWasFull;
+// la pieza se reconstruye con makePiece(). `canHold` no es una habilidad: es el
+// lockout anti-abuso del hold clásico, un uso por pieza caída.
+let energy, holdType, canHold, visionRemaining, slowRemaining, undoSnapshot, skillMenuOpen, energyWasFull;
 let shownEnergy = -1; // última energía pintada: el HUD se refresca cada frame
 let theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 let gridColor = GRID_COLORS[theme];
@@ -593,7 +594,7 @@ function takeSnapshot() {
     score, lines, level, dropInterval,
     combo, maxCombo, backToBack,
     linesSincePowerUp, pendingPowerUp, pendingMonomino,
-    holdType,
+    holdType, canHold,
   };
 }
 
@@ -613,6 +614,7 @@ function restoreSnapshot() {
   pendingPowerUp = s.pendingPowerUp;
   pendingMonomino = s.pendingMonomino;
   holdType = s.holdType;
+  canHold = s.canHold;
   lockTimer = 0;
   lockResets = 0;
   dropAccum = 0;
@@ -670,27 +672,6 @@ function useSkill(id) {
       drawNext();
       drawHold();
       return true;
-
-    case 'hold': {
-      const stored = holdType;
-      holdType = current.type;
-      if (stored === null) {
-        current = queue.shift();
-        refillQueue();
-      } else {
-        current = makePiece(stored);
-      }
-      lockTimer = 0;
-      lockResets = 0;
-      dropAccum = 0;
-      lastActionWasRotation = false;
-      lastKick = 0;
-      // La pieza recuperada puede no caber si el tablero llegó al techo.
-      if (collide(current.shape, current.x, current.y)) { endGame(); return true; }
-      drawNext();
-      drawHold();
-      return true;
-    }
   }
   return false;
 }
@@ -772,12 +753,41 @@ function refillQueue() {
   while (queue.length < QUEUE_MAX) queue.push(randomPiece());
 }
 
+// Hold clásico: gratis, instantáneo y una sola vez por pieza caída. `holdType`
+// guarda el tipo, no la pieza, así que lo reservado vuelve siempre con su
+// rotación y posición iniciales.
+function holdPiece() {
+  if (!canHold) return;
+  canHold = false;
+  const stored = holdType;
+  holdType = current.type;
+  if (stored === null) {
+    // Slot vacío: se tira de la cola a mano. Llamar a spawn() sería un bug:
+    // reactivaría canHold y consumiría las recompensas pendientes fuera de turno.
+    current = queue.shift();
+    refillQueue();
+  } else {
+    current = makePiece(stored);
+  }
+  lockTimer = 0;
+  lockResets = 0;
+  dropAccum = 0;
+  lastActionWasRotation = false; // cambiar de pieza invalida el T-Spin
+  lastKick = 0;
+  // La pieza recuperada puede no caber si el tablero llegó al techo.
+  if (collide(current.shape, current.x, current.y)) { endGame(); return; }
+  emitEvent('hold', {});
+  drawNext();
+  drawHold();
+}
+
 function spawn() {
   current = queue.shift();
   lastActionWasRotation = false;
   lastKick = 0;
   lockTimer = 0;
   lockResets = 0;
+  canHold = true; // única entrada de pieza nueva: aquí se libera el lockout
   // Los flags pendientes se insertan al frente de lo que queda de cola, es
   // decir en la posición que antes ocupaba `next`: la recompensa sigue saliendo
   // un spawn más tarde, igual que antes de existir la cola.
@@ -1117,6 +1127,10 @@ function emitEvent(name, data) {
       spawnFloatText(`${data.skill.icon} ${data.skill.name.toUpperCase()}`, Math.floor(ROWS / 3), data.skill.color, 20);
       playSweep(330, 880, 0.25, 'triangle', 0.1);
       break;
+    case 'hold':
+      // Acción de rutina: solo un clic corto, sin partículas ni shake.
+      playTone(587.33, 0.08, 'triangle', 0.06);
+      break;
     case 'energy-full':
       spawnFloatText('⚡ ENERGÍA AL 100%', Math.floor(ROWS / 4), '#4dd0e1', 22);
       [659.25, 987.77].forEach((f, i) => playTone(f, 0.2, 'triangle', 0.09, i * 0.09));
@@ -1214,6 +1228,9 @@ function drawNext() {
 }
 
 function drawHold() {
+  // El atenuado se sincroniza aquí: drawHold() se llama exactamente en los
+  // momentos en que canHold cambia (spawn, hold, rewind, init).
+  holdPanel.classList.toggle('locked', !canHold);
   holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
   if (holdType === null) return;
   drawPieceBox(holdCtx, makePiece(holdType), 0, 0, 30);
@@ -1406,6 +1423,7 @@ function init() {
   shownEnergy = -1;
   energyWasFull = false;
   holdType = null;
+  canHold = true;
   visionRemaining = 0;
   slowRemaining = 0;
   undoSnapshot = null;
@@ -1468,6 +1486,11 @@ document.addEventListener('keydown', e => {
     case 'Space':
       e.preventDefault();
       hardDrop();
+      break;
+    case 'KeyC':
+    case 'ShiftLeft':
+    case 'ShiftRight':
+      holdPiece();
       break;
     case 'KeyE':
       openSkillMenu();
