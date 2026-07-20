@@ -32,7 +32,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*)"'
+          # En agent mode esta allowlist es la ÚNICA que existe: el action no inyecta
+          # herramientas base. El SDK headless no tiene prompt handler, así que todo lo
+          # que no esté aquí se deniega en silencio y el run acaba en verde sin hacer nada.
+          claude_args: '--allowedTools "Read,Grep,Glob,Write,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*),Bash(gh search issues:*)"'
           prompt: |
             Eres el triage automático de este repositorio (un juego de Tetris en JS vanilla).
             El número del issue está en la variable de entorno ISSUE_NUMBER y el evento que te
@@ -48,9 +51,18 @@ jobs:
             2. Lee `CLAUDE.md` para entender la arquitectura antes de diagnosticar.
             3. Localiza en `game.js` las funciones implicadas. El archivo es pequeño: léelo entero.
                Consulta también `index.html`, `style.css` o `README.md` si el issue los toca.
+            4. Comprueba si es duplicado: `gh search issues --repo "$GH_REPO" "palabras clave"`.
+
+            ## Sintaxis de comandos (IMPORTANTE)
+
+            Cada comando debe ser UNA sola línea. NUNCA uses heredocs (`<<EOF`), pipes (`|`),
+            `&&`, `;`, ni cadenas multilínea dentro de `--body`. Los saltos de línea cuentan como
+            separadores de comando y hacen que la llamada se DENIEGUE en silencio: el workflow
+            terminaría en verde sin haber hecho nada. Un comando `gh` por llamada.
 
             ## Labels
 
+            Consulta primero los labels reales del repo: `gh label list`.
             Aplica solo labels de esta lista cerrada. NUNCA crees labels nuevos:
             `bug`, `documentation`, `duplicate`, `enhancement`, `good first issue`,
             `help wanted`, `invalid`, `question`, `wontfix`.
@@ -60,8 +72,13 @@ jobs:
 
             ## Comentario de diagnóstico
 
-            Publica UN solo comentario, en español, con `gh issue comment "$ISSUE_NUMBER" --body "..."`
-            (usa `--body-file` con un heredoc si el texto es largo), con esta estructura:
+            Publica UN solo comentario, en español, en DOS pasos:
+
+            1. Escribe el cuerpo con la herramienta `Write` en `/tmp/diagnostico.md`.
+               Escribe solo ahí, nunca dentro del repositorio.
+            2. Publícalo: `gh issue comment "$ISSUE_NUMBER" --body-file /tmp/diagnostico.md`
+
+            Estructura del comentario:
 
             - **Resumen** — 1-2 frases sobre qué pide o reporta el issue.
             - **Zona del código** — funciones y referencias `game.js:línea` implicadas.
