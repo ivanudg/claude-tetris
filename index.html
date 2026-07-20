@@ -52,6 +52,24 @@
           <span class="value" id="level">1</span>
         </div>
 
+        <div class="panel-section objective-panel hidden" id="objective-panel">
+          <span class="label">OBJETIVO</span>
+          <div class="objective-row hidden" id="objective-timer-row">
+            <span class="objective-name">⏱ Tiempo</span>
+            <span class="objective-value" id="objective-timer">0</span>
+          </div>
+          <div class="objective-row hidden" id="objective-lines-row">
+            <span class="objective-name">🎯 Líneas</span>
+            <span class="objective-value" id="objective-lines">0/0</span>
+          </div>
+          <div class="objective-row hidden" id="objective-garbage-row">
+            <span class="objective-name">🧱 Basura</span>
+            <span class="objective-value" id="objective-garbage">0</span>
+          </div>
+        </div>
+
+        <div id="mutator-badges" class="mutator-badges hidden"></div>
+
         <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
@@ -83,7 +101,8 @@
           <span class="label">CONTROLS</span>
           <ul>
             <li><kbd>←</kbd><kbd>→</kbd> mover</li>
-            <li><kbd>↑</kbd> rotar</li>
+            <li><kbd>↑</kbd><kbd>X</kbd> rotar</li>
+            <li><kbd>Z</kbd> rotar al revés</li>
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
             <li><kbd>P</kbd> pausa</li>
@@ -96,7 +115,26 @@
       <div class="overlay-box">
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
-        <button id="restart-btn">Reiniciar</button>
+
+        <div id="challenge-config" class="challenge-config hidden" data-mode="classic">
+          <label class="challenge-field" for="mode-select">
+            <span>Modo de juego</span>
+            <select id="mode-select">
+              <option value="classic">Clásico — sin límite</option>
+              <option value="timeAttack">Contra Reloj — 20 líneas en 2:00</option>
+              <option value="survival">Supervivencia — basura cada 15 s</option>
+            </select>
+          </label>
+
+          <fieldset class="challenge-mutators">
+            <legend>Modificadores</legend>
+            <label><input type="checkbox" id="mut-puzzle" /> 🧩 Tablero puzzle <small>(bloques indestructibles)</small></label>
+            <label><input type="checkbox" id="mut-invisible" /> 👻 Piezas invisibles <small>(al tocar suelo)</small></label>
+            <label><input type="checkbox" id="mut-reverse" /> 🔄 Rotación inversa</label>
+          </fieldset>
+        </div>
+
+        <button id="restart-btn">Jugar</button>
       </div>
     </div>
   </div>

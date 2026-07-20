@@ -24,6 +24,8 @@ const COLORS = [
   '#a5d6a7', // 16 - pentominó U (copa)
   '#ce93d8', // 17 - pentominó Y
   '#ffffff', // 18 - monominó 1x1 (recompensa por Tetris)
+  '#4a4a52', // 19 - bloque indestructible (modo Puzzle)
+  '#78787f', // 20 - línea basura (modo Supervivencia)
 ];
 
 const PIECES = [
@@ -46,6 +48,8 @@ const PIECES = [
   [[16,0,16],[16,16,16],[0,0,0]],              // pentominó U (copa)
   [[0,17,0,0],[17,17,17,17],[0,0,0,0],[0,0,0,0]], // pentominó Y (línea de 4 + bump en el 2º)
   [[18]],                                      // monominó 1x1
+  null,                                        // indestructible: solo celda de tablero
+  null,                                        // basura: solo celda de tablero
 ];
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
@@ -74,6 +78,59 @@ const PERFECT_B2B_TETRIS = 3200; // perfect clear de 4 líneas encadenado a otra
 const COMBO_UNIT = 50;           // puntos por nivel de combo, antes de multiplicar por level
 const B2B_MULTIPLIER = 1.5;
 
+// ---------------------------------------------------------------------------
+// Modo Desafío: objetivos de nivel (contra reloj, supervivencia) y mutadores
+// (puzzle, piezas invisibles, rotación inversa). Todos combinables entre sí.
+// ---------------------------------------------------------------------------
+
+// Tipos de celda exclusivos del modo desafío: nunca se generan como pieza.
+const INDESTRUCTIBLE = 19; // no se limpia, no lo borran bomba ni rayo
+const GARBAGE = 20;        // bloque normal a todos los efectos, solo cambia el color
+
+// Lock delay: al tocar suelo la pieza espera antes de consolidarse. Es la
+// ventana que el mutador "invisibles" aprovecha para ocultarla.
+const LOCK_DELAY_MS = 500;
+const LOCK_RESET_MAX = 15; // tope de reinicios por pieza: corta el infinite spin
+
+const CHALLENGE_DEFAULTS = {
+  mode: 'classic',      // 'classic' | 'timeAttack' | 'survival'
+  targetLines: 20,      // contra reloj: líneas a limpiar
+  timeLimitMs: 120000,  // contra reloj: tiempo disponible
+  garbageEveryMs: 15000,// supervivencia: cada cuánto sube una fila basura
+  mutators: { puzzle: false, invisible: false, reverse: false },
+};
+
+const TIME_WARNING_MS = 10000; // umbral de aviso del temporizador
+
+// Tableros de partida del mutador Puzzle, anclados al fondo.
+// '.' = vacío · '#' = indestructible · dígito = bloque normal (tipo 1-7).
+const PUZZLE_LAYOUTS = [
+  [
+    '..........',
+    '###....###',
+    '6.11..22.7',
+    '6.11..22.7',
+  ],
+  [
+    '....##....',
+    '33......44',
+    '33..##..44',
+    '5555##5555',
+  ],
+  [
+    '#........#',
+    '#..7777..#',
+    '#.166661.#',
+    '..1.##.1..',
+  ],
+  [
+    '..#....#..',
+    '2.#.55.#.3',
+    '2...55...3',
+    '4444..4444',
+  ],
+];
+
 const MAX_PARTICLES = 300;
 const SHAKE_DECAY = 900;   // px/s a los que decae la magnitud del shake
 const FLASH_MS = 220;
@@ -97,6 +154,19 @@ const comboIndicator = document.getElementById('combo-indicator');
 const comboCountEl = document.getElementById('combo-count');
 const b2bBadge = document.getElementById('b2b-badge');
 const muteToggle = document.getElementById('mute-toggle');
+const challengeConfig = document.getElementById('challenge-config');
+const modeSelect = document.getElementById('mode-select');
+const mutPuzzle = document.getElementById('mut-puzzle');
+const mutInvisible = document.getElementById('mut-invisible');
+const mutReverse = document.getElementById('mut-reverse');
+const objectivePanel = document.getElementById('objective-panel');
+const objectiveTimerRow = document.getElementById('objective-timer-row');
+const objectiveTimerEl = document.getElementById('objective-timer');
+const objectiveLinesRow = document.getElementById('objective-lines-row');
+const objectiveLinesEl = document.getElementById('objective-lines');
+const objectiveGarbageRow = document.getElementById('objective-garbage-row');
+const objectiveGarbageEl = document.getElementById('objective-garbage');
+const mutatorBadges = document.getElementById('mutator-badges');
 
 const THEME_KEY = 'tetris-theme';
 const GRID_COLORS = { dark: '#22222e', light: '#d7d7e6' };
@@ -112,11 +182,34 @@ let lastActionWasRotation, lastKick;
 // Efectos visuales (todos avanzan con el dt del loop, nunca con reloj de pared).
 let particles = [], floatTexts = [];
 let shakeRemaining = 0, shakeMagnitude = 0, flashRemaining = 0, flashColor = '#fff';
+// Modo desafío. `challenge` lo fija startGame() desde el menú y sobrevive a
+// init(), igual que el tema y el silencio: init() resetea la partida, no la
+// configuración elegida.
+let challenge = cloneChallenge(CHALLENGE_DEFAULTS);
+let timeRemaining, garbageAccum, warnedTime, won;
+// Lock delay de la pieza activa. `lockTimer > 0` significa "apoyada".
+let lockTimer, lockResets;
 let theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 let gridColor = GRID_COLORS[theme];
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+}
+
+function cloneChallenge(src) {
+  return { ...src, mutators: { ...src.mutators } };
+}
+
+// Escribe un layout de PUZZLE_LAYOUTS anclado al fondo del tablero.
+function applyPuzzleLayout() {
+  const layout = PUZZLE_LAYOUTS[Math.floor(Math.random() * PUZZLE_LAYOUTS.length)];
+  const top = ROWS - layout.length;
+  for (let r = 0; r < layout.length; r++)
+    for (let c = 0; c < COLS; c++) {
+      const ch = layout[r][c];
+      if (ch === '.') continue;
+      board[top + r][c] = ch === '#' ? INDESTRUCTIBLE : Number(ch);
+    }
 }
 
 function makePiece(type) {
@@ -134,10 +227,11 @@ function isPowerUp(type) {
   return type >= FIRST_POWER && type <= LAST_POWER;
 }
 
-// Bloques que se fusionan con el tablero: tetrominós, tuerca, pentominós y monominó.
-// Excluye power-ups (9-13) y comodín (14).
+// Bloques que se fusionan con el tablero: tetrominós, tuerca, pentominós,
+// monominó y basura. Excluye power-ups (9-13), comodín (14) e indestructible
+// (19), que no debe contar como color dominante para el Tinte.
 function isNormalBlock(type) {
-  return (type >= 1 && type <= 8) || (type >= PENTOMINOS[0] && type <= MONOMINO);
+  return (type >= 1 && type <= 8) || (type >= PENTOMINOS[0] && type <= MONOMINO) || type === GARBAGE;
 }
 
 function randomPowerUp() {
@@ -166,8 +260,19 @@ function rotateCW(shape) {
   return result;
 }
 
-function tryRotate() {
-  const rotated = rotateCW(current.shape);
+function rotateCCW(shape) {
+  const rows = shape.length, cols = shape[0].length;
+  const result = Array.from({ length: cols }, () => new Array(rows).fill(0));
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      result[cols - 1 - c][r] = shape[r][c];
+  return result;
+}
+
+// `dir` = 1 horario, -1 antihorario. El mutador de rotación inversa se aplica
+// en el keydown, no aquí: esta función solo obedece la dirección que recibe.
+function tryRotate(dir = 1) {
+  const rotated = dir === 1 ? rotateCW(current.shape) : rotateCCW(current.shape);
   const kicks = [0, -1, 1, -2, 2];
   for (const kick of kicks) {
     if (!collide(rotated, current.x + kick, current.y)) {
@@ -175,9 +280,19 @@ function tryRotate() {
       current.x += kick;
       lastActionWasRotation = true;
       lastKick = kick;
+      resetLockTimer();
       return;
     }
   }
+}
+
+// Rotar o mover una pieza ya apoyada reinicia su lock delay, con un tope por
+// pieza para que no se pueda posponer el bloqueo indefinidamente.
+function resetLockTimer() {
+  if (lockTimer <= 0) return;
+  if (lockResets >= LOCK_RESET_MAX) return;
+  lockResets++;
+  lockTimer = 0;
 }
 
 function merge() {
@@ -195,7 +310,8 @@ function clearLines() {
   // reales, y tras el splice el contenido de esa `y` ya es otro.
   const rows = [];
   for (let r = ROWS - 1; r >= 0; r--) {
-    if (board[r].every(v => v !== 0)) {
+    // Una fila con un bloque indestructible nunca se limpia, esté llena o no.
+    if (board[r].every(v => v !== 0 && v !== INDESTRUCTIBLE)) {
       rows.push({ y: r, cells: [...board[r]] });
       board.splice(r, 1);
       board.unshift(new Array(COLS).fill(0));
@@ -206,8 +322,10 @@ function clearLines() {
   return { cleared, rows };
 }
 
+// Los indestructibles del modo Puzzle no cuentan: si no, el Perfect Clear
+// sería inalcanzable con ese mutador activo.
 function isBoardEmpty() {
-  return board.every(row => row.every(v => v === 0));
+  return board.every(row => row.every(v => v === 0 || v === INDESTRUCTIBLE));
 }
 
 // T-Spin: se evalúa ANTES del merge, con el tablero aún sin la pieza.
@@ -325,6 +443,7 @@ function powerBomb(x, y) {
     if (r < 0 || r >= ROWS) continue;
     for (let c = x - 1; c <= x + 1; c++) {
       if (c < 0 || c >= COLS) continue;
+      if (board[r][c] === INDESTRUCTIBLE) continue; // la bomba no lo rompe
       if (board[r][c]) destroyed++;
       board[r][c] = 0;
     }
@@ -334,8 +453,9 @@ function powerBomb(x, y) {
 }
 
 function powerRay(x, y) {
-  board[y].fill(0);
-  for (let r = 0; r < ROWS; r++) board[r][x] = 0;
+  // No se puede usar fill(0): los indestructibles sobreviven al rayo.
+  for (let c = 0; c < COLS; c++) if (board[y][c] !== INDESTRUCTIBLE) board[y][c] = 0;
+  for (let r = 0; r < ROWS; r++) if (board[r][x] !== INDESTRUCTIBLE) board[r][x] = 0;
 }
 
 function powerTint() {
@@ -353,13 +473,21 @@ function powerTint() {
       if (board[r][c] === dominant) board[r][c] = WILDCARD;
 }
 
+// Compacta cada columna hacia abajo. Los indestructibles actúan como suelo:
+// la columna se compacta por segmentos entre ellos, así ni flotan ni se hunden.
 function powerGravity() {
   for (let c = 0; c < COLS; c++) {
-    const stack = [];
-    for (let r = ROWS - 1; r >= 0; r--)
-      if (board[r][c]) stack.push(board[r][c]);
-    for (let r = ROWS - 1, i = 0; r >= 0; r--, i++)
-      board[r][c] = i < stack.length ? stack[i] : 0;
+    let bottom = ROWS - 1; // fondo del segmento que se está compactando
+    for (let r = ROWS - 1; r >= -1; r--) {
+      if (r >= 0 && board[r][c] !== INDESTRUCTIBLE) continue;
+      // r es un indestructible (o el borde superior): compacta [r+1, bottom].
+      const stack = [];
+      for (let s = bottom; s > r; s--)
+        if (board[s][c]) stack.push(board[s][c]);
+      for (let s = bottom, i = 0; s > r; s--, i++)
+        board[s][c] = i < stack.length ? stack[i] : 0;
+      bottom = r - 1;
+    }
   }
 }
 
@@ -374,6 +502,30 @@ function applyPowerUp(piece) {
   }
 }
 
+// Supervivencia: empuja una fila basura desde abajo con un único hueco.
+// Todo el tablero sube una fila, la pieza activa incluida.
+function pushGarbageRow() {
+  if (board[0].some(v => v !== 0)) { endGame('crushed'); return; }
+  const row = new Array(COLS).fill(GARBAGE);
+  row[Math.floor(Math.random() * COLS)] = 0;
+  board.shift();
+  board.push(row);
+  // La pieza sube con el tablero para no quedar enterrada, salvo que ya esté
+  // pegada al techo: ahí se queda donde está y muere solo si la fila la aplasta.
+  if (current.y > 0 && !collide(current.shape, current.x, current.y - 1)) current.y--;
+  emitEvent('garbage-push', {});
+  if (collide(current.shape, current.x, current.y)) endGame('crushed');
+}
+
+// Condición de victoria del objetivo activo. Devuelve true si la partida
+// terminó, para que quien llama corte su flujo.
+function checkObjective() {
+  if (challenge.mode !== 'timeAttack') return false;
+  if (lines < challenge.targetLines) return false;
+  winGame();
+  return true;
+}
+
 function lockPiece() {
   const spin = detectSpin(); // antes del merge: lee el tablero sin la pieza
   applyWildcards();
@@ -383,6 +535,9 @@ function lockPiece() {
   const { cleared, rows } = clearLines();
   const perfect = cleared > 0 && isBoardEmpty();
   resolveScoring({ cleared, spin, perfect, isPower, rows });
+  // La victoria se comprueba antes del spawn: con el tablero alto, generar la
+  // pieza siguiente daría un game over espurio justo al ganar.
+  if (checkObjective()) return;
   spawn();
 }
 
@@ -390,6 +545,8 @@ function spawn() {
   current = next;
   lastActionWasRotation = false;
   lastKick = 0;
+  lockTimer = 0;
+  lockResets = 0;
   if (pendingMonomino) {
     // El monominó gana al power-up, pero no consume su flag: sale en el spawn siguiente.
     pendingMonomino = false;
@@ -425,6 +582,25 @@ function updateHUD() {
   }
   shownCombo = combo;
   b2bBadge.classList.toggle('hidden', !backToBack);
+  updateObjectiveHUD();
+}
+
+function updateObjectiveHUD() {
+  const timed = challenge.mode === 'timeAttack';
+  const survival = challenge.mode === 'survival';
+  objectivePanel.classList.toggle('hidden', challenge.mode === 'classic');
+  objectiveTimerRow.classList.toggle('hidden', !timed);
+  objectiveLinesRow.classList.toggle('hidden', !timed);
+  objectiveGarbageRow.classList.toggle('hidden', !survival);
+  if (timed) {
+    const secs = Math.max(0, timeRemaining) / 1000;
+    objectiveTimerEl.textContent = secs < 10 ? secs.toFixed(1) : Math.ceil(secs);
+    objectiveTimerEl.classList.toggle('urgent', timeRemaining <= TIME_WARNING_MS);
+    objectiveLinesEl.textContent = `${Math.min(lines, challenge.targetLines)}/${challenge.targetLines}`;
+  }
+  if (survival)
+    objectiveGarbageEl.textContent =
+      Math.max(0, (challenge.garbageEveryMs - garbageAccum) / 1000).toFixed(1);
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
@@ -691,6 +867,22 @@ function emitEvent(name, data) {
     case 'game-over':
       playSweep(440, 60, 0.9, 'sawtooth', 0.12);
       break;
+    case 'garbage-push':
+      addShake(9);
+      playTone(90, 0.18, 'square', 0.09);
+      break;
+    case 'time-warning':
+      addFlash('#ff5d5d');
+      spawnFloatText('¡10 SEGUNDOS!', Math.floor(ROWS / 3), '#ff5d5d', 26);
+      [880, 660].forEach((f, i) => playTone(f, 0.16, 'square', 0.09, i * 0.18));
+      break;
+    case 'challenge-win':
+      addFlash('#8bffb0');
+      addShake(18);
+      spawnFloatText('¡DESAFÍO SUPERADO!', Math.floor(ROWS / 2), '#8bffb0', 28);
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+        playTone(f, 0.34, 'triangle', 0.11, i * 0.09));
+      break;
   }
 }
 
@@ -708,21 +900,27 @@ function draw() {
       drawCellIcon(ctx, c, r, board[r][c], BLOCK);
     }
 
-  // ghost
-  const gy = ghostY();
-  for (let r = 0; r < current.shape.length; r++)
-    for (let c = 0; c < current.shape[r].length; c++)
-      if (current.shape[r][c]) {
-        drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
-        drawCellIcon(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
-      }
+  // Mutador "piezas invisibles": en cuanto la pieza se apoya y entra en el
+  // lock delay desaparece por completo (también su ghost) hasta consolidarse.
+  const hidden = challenge.mutators.invisible && lockTimer > 0;
 
-  // current piece
-  for (let r = 0; r < current.shape.length; r++)
-    for (let c = 0; c < current.shape[r].length; c++) {
-      drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
-      drawCellIcon(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
-    }
+  if (!hidden) {
+    // ghost
+    const gy = ghostY();
+    for (let r = 0; r < current.shape.length; r++)
+      for (let c = 0; c < current.shape[r].length; c++)
+        if (current.shape[r][c]) {
+          drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+          drawCellIcon(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+        }
+
+    // current piece
+    for (let r = 0; r < current.shape.length; r++)
+      for (let c = 0; c < current.shape[r].length; c++) {
+        drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+        drawCellIcon(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+      }
+  }
 
   drawEffects();
   ctx.restore();
@@ -741,13 +939,69 @@ function drawNext() {
     }
 }
 
-function endGame() {
+const END_TITLES = {
+  topout: 'GAME OVER',
+  timeout: 'TIEMPO AGOTADO',
+  crushed: 'APLASTADO',
+};
+
+function endGame(reason = 'topout') {
+  if (gameOver) return; // pushGarbageRow() puede detectar la derrota dos veces
   gameOver = true;
   cancelAnimationFrame(animId);
-  overlayTitle.textContent = 'GAME OVER';
+  overlayTitle.textContent = END_TITLES[reason] || END_TITLES.topout;
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()} · Combo máx.: x${maxCombo + 1}`;
-  overlay.classList.remove('hidden');
+  showOverlay(false);
   emitEvent('game-over', {});
+}
+
+function winGame() {
+  gameOver = true;
+  won = true;
+  cancelAnimationFrame(animId);
+  overlayTitle.textContent = '¡DESAFÍO SUPERADO!';
+  const secs = (timeRemaining / 1000).toFixed(1);
+  overlayScore.textContent =
+    `${lines} líneas · Puntuación: ${score.toLocaleString()} · Tiempo restante: ${secs}s`;
+  showOverlay(false);
+  emitEvent('challenge-win', {});
+}
+
+// El overlay se reutiliza para menú, pausa y fin de partida: `withConfig`
+// decide si se ve el selector de desafío.
+function showOverlay(withConfig) {
+  challengeConfig.classList.toggle('hidden', !withConfig);
+  restartBtn.textContent = withConfig ? 'Jugar' : 'Volver al menú';
+  overlay.classList.remove('hidden');
+}
+
+function showMenu() {
+  paused = false;
+  gameOver = true; // congela el loop mientras el menú está abierto
+  cancelAnimationFrame(animId);
+  overlayTitle.textContent = 'TETRIS';
+  overlayScore.textContent = 'Elige un desafío';
+  showOverlay(true);
+}
+
+// Lee el menú en `challenge` y arranca la partida.
+function startGame() {
+  challenge = cloneChallenge(CHALLENGE_DEFAULTS);
+  challenge.mode = modeSelect.value;
+  challenge.mutators.puzzle = mutPuzzle.checked;
+  challenge.mutators.invisible = mutInvisible.checked;
+  challenge.mutators.reverse = mutReverse.checked;
+  init();
+}
+
+// Distintivos de los mutadores activos, junto al panel de objetivo.
+function updateMutatorBadges() {
+  const active = [];
+  if (challenge.mutators.puzzle) active.push('🧩 Puzzle');
+  if (challenge.mutators.invisible) active.push('👻 Invisibles');
+  if (challenge.mutators.reverse) active.push('🔄 Inversa');
+  mutatorBadges.textContent = active.join(' · ');
+  mutatorBadges.classList.toggle('hidden', active.length === 0);
 }
 
 function applyTheme() {
@@ -769,13 +1023,37 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
+    overlay.classList.add('hidden');
     lastTime = performance.now();
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
     overlayTitle.textContent = 'PAUSA';
     overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
+    showOverlay(false);
+    restartBtn.textContent = 'Reanudar';
+  }
+}
+
+// Relojes del objetivo activo. Se llama solo desde loop() y solo cuando el
+// tablero no está congelado.
+function tickChallenge(dt) {
+  if (challenge.mode === 'timeAttack') {
+    timeRemaining = Math.max(0, timeRemaining - dt);
+    if (!warnedTime && timeRemaining <= TIME_WARNING_MS) {
+      warnedTime = true;
+      emitEvent('time-warning', {});
+    }
+    updateHUD();
+    if (timeRemaining <= 0) { endGame('timeout'); return; }
+  }
+  if (challenge.mode === 'survival') {
+    garbageAccum += dt;
+    while (garbageAccum >= challenge.garbageEveryMs && !gameOver) {
+      garbageAccum -= challenge.garbageEveryMs;
+      pushGarbageRow();
+    }
+    updateHUD();
   }
 }
 
@@ -791,15 +1069,24 @@ function loop(ts) {
     updateHUD();
   } else {
     dropAccum += dt;
+    // Los relojes del desafío corren aquí dentro: ❄️ los detiene igual que
+    // la pausa, y por dt, nunca por reloj de pared.
+    tickChallenge(dt);
+    if (gameOver) { draw(); return; }
   }
-  if (dropAccum >= dropInterval) {
-    dropAccum = 0;
-    if (!collide(current.shape, current.x, current.y + 1)) {
+
+  // Lock delay: la pieza apoyada espera antes de consolidarse.
+  if (!collide(current.shape, current.x, current.y + 1)) {
+    lockTimer = 0;
+    if (dropAccum >= dropInterval) {
+      dropAccum = 0;
       current.y++;
       lastActionWasRotation = false; // la caída por gravedad invalida el T-Spin
-    } else {
-      lockPiece();
     }
+  } else if (freezeRemaining <= 0) {
+    dropAccum = 0;
+    lockTimer += dt;
+    if (lockTimer >= LOCK_DELAY_MS) lockPiece();
   }
   draw();
   if (gameOver || paused) return; // partida congelada: no reprogramar el frame
@@ -808,6 +1095,7 @@ function loop(ts) {
 
 function init() {
   board = createBoard();
+  if (challenge.mutators.puzzle) applyPuzzleLayout();
   score = 0;
   lines = 0;
   level = 1;
@@ -825,6 +1113,13 @@ function init() {
   backToBack = false;
   lastActionWasRotation = false;
   lastKick = 0;
+  lockTimer = 0;
+  lockResets = 0;
+  // Estado del desafío. `challenge` no se resetea: lo fija startGame().
+  timeRemaining = challenge.mode === 'timeAttack' ? challenge.timeLimitMs : 0;
+  garbageAccum = 0;
+  warnedTime = false;
+  won = false;
   particles = [];
   floatTexts = [];
   shakeRemaining = 0;
@@ -833,6 +1128,7 @@ function init() {
   lastTime = performance.now();
   next = randomPiece();
   spawn();
+  updateMutatorBadges();
   updateHUD();
   overlay.classList.add('hidden');
   cancelAnimationFrame(animId);
@@ -848,20 +1144,26 @@ document.addEventListener('keydown', e => {
       if (!collide(current.shape, current.x - 1, current.y)) {
         current.x--;
         lastActionWasRotation = false; // mover lateralmente invalida el T-Spin
+        resetLockTimer();
       }
       break;
     case 'ArrowRight':
       if (!collide(current.shape, current.x + 1, current.y)) {
         current.x++;
         lastActionWasRotation = false;
+        resetLockTimer();
       }
       break;
     case 'ArrowDown':
       softDrop();
       break;
+    // Mutador de rotación inversa: intercambia el sentido de ambas teclas.
     case 'ArrowUp':
     case 'KeyX':
-      tryRotate();
+      tryRotate(challenge.mutators.reverse ? -1 : 1);
+      break;
+    case 'KeyZ':
+      tryRotate(challenge.mutators.reverse ? 1 : -1);
       break;
     case 'Space':
       e.preventDefault();
@@ -871,10 +1173,23 @@ document.addEventListener('keydown', e => {
   updateHUD();
 });
 
-restartBtn.addEventListener('click', init);
+// Un único botón para tres estados del overlay: menú, pausa y fin de partida.
+restartBtn.addEventListener('click', () => {
+  if (!challengeConfig.classList.contains('hidden')) startGame();
+  else if (paused) togglePause();
+  else showMenu();
+});
+// El selector de modo solo tiene sentido con su objetivo: refleja en el menú
+// qué parámetros afectan al modo elegido.
+modeSelect.addEventListener('change', () => {
+  challengeConfig.dataset.mode = modeSelect.value;
+});
+
 themeToggle.addEventListener('click', toggleTheme);
 muteToggle.addEventListener('click', toggleMute);
 
 applyTheme();
 applyMute();
+challengeConfig.dataset.mode = modeSelect.value;
 init();
+showMenu();

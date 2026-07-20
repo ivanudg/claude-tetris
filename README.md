@@ -14,6 +14,7 @@ Implementación del clásico **Tetris** en JavaScript vanilla, usando HTML5 Canv
   - [Tabla de contenidos](#tabla-de-contenidos)
   - [Qué hace el proyecto](#qué-hace-el-proyecto)
   - [Power-ups](#power-ups)
+  - [Modo Desafío](#modo-desafío)
   - [Cómo ejecutar el juego](#cómo-ejecutar-el-juego)
     - [Opción 1: abrir el archivo directamente](#opción-1-abrir-el-archivo-directamente)
     - [Opción 2: servidor local (recomendado)](#opción-2-servidor-local-recomendado)
@@ -51,6 +52,9 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - **Pausa** y **Game Over** con opción de reinicio.
 - **Modo claro/oscuro**: switch junto al título (por defecto modo oscuro); la preferencia se guarda en `localStorage`.
 - **Power-ups aleatorios** cada 10 líneas completadas (ver más abajo).
+- **Modo Desafío**: objetivos de nivel (contra reloj, supervivencia) y modificadores combinables (ver más abajo).
+- **Lock delay** de 500 ms: al tocar suelo la pieza espera medio segundo antes de consolidarse, con
+  hasta 15 reinicios por pieza al moverla o rotarla. `↓` y `Espacio` siguen bloqueando al instante.
 
 ---
 
@@ -105,6 +109,43 @@ La congelación se descuenta con el `dt` del game loop, no con el reloj del sist
 
 ---
 
+## Modo Desafío
+
+Antes de cada partida se elige un **objetivo** y, opcionalmente, cualquier combinación de
+**modificadores**. Todo se configura en el menú que aparece al cargar la página y al terminar una
+partida; el modo **Clásico** sin modificadores es la partida de siempre.
+
+### Objetivos
+
+| Objetivo          | Victoria                        | Derrota                                        |
+| ----------------- | ------------------------------- | ---------------------------------------------- |
+| **Clásico**       | —                               | Que la pieza nueva no quepa                    |
+| **Contra Reloj**  | Limpiar 20 líneas antes de 2:00 | Que el temporizador llegue a 0                 |
+| **Supervivencia** | —                               | Que la basura te aplaste contra el techo       |
+
+En **Supervivencia** el tablero genera cada 15 segundos una fila de bloques grises con un único hueco
+aleatorio y empuja todo hacia arriba, la pieza activa incluida. La fila que se sale por arriba se
+pierde.
+
+Ambos relojes se descuentan con el `dt` del game loop: pausar la partida o congelar el tablero con ❄️
+**no** consume tiempo ni acerca la siguiente fila de basura.
+
+### Modificadores
+
+| Modificador             | Efecto                                                                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧩 **Tablero puzzle**   | La partida arranca con una disposición fija de bloques, incluidos **bloques indestructibles**: no se limpian aunque completes la fila, y ni la bomba ni el rayo los rompen. |
+| 👻 **Piezas invisibles** | En cuanto la pieza toca una superficie y entra en el lock delay se vuelve **100 % invisible** (también su ghost) hasta consolidarse. Si la mueves y vuelve a caer, reaparece. |
+| 🔄 **Rotación inversa**  | Se intercambia el sentido de las dos teclas de rotación: `↑`/`X` gira a la izquierda y `Z` a la derecha. |
+
+Los tres son ortogonales entre sí y con el objetivo elegido: se pueden activar todos a la vez.
+
+Los bloques indestructibles **no** impiden el Perfect Clear (se ignoran al comprobar si el tablero
+quedó vacío) y tampoco cuentan como color dominante para el 🎨 Tinte. La ⬇️ Gravedad los trata como
+suelo: compacta cada columna por segmentos, así ni flotan ni se hunden.
+
+---
+
 ## Cómo ejecutar el juego
 
 No hay nada que instalar ni compilar. Tienes dos opciones:
@@ -142,9 +183,12 @@ Después abre `http://localhost:8000` en el navegador.
 | --------- | --------------------------------- |
 | `←` / `→` | Mover la pieza horizontalmente    |
 | `↑` o `X` | Rotar la pieza en sentido horario |
+| `Z`       | Rotar en sentido antihorario      |
 | `↓`       | Soft drop (bajar más rápido)      |
 | `Espacio` | Hard drop (caída instantánea)     |
 | `P`       | Pausar / reanudar                 |
+
+Con el modificador **rotación inversa** activo, `↑`/`X` y `Z` intercambian su sentido.
 
 ---
 
