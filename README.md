@@ -13,6 +13,7 @@ Implementación del clásico **Tetris** en JavaScript vanilla, usando HTML5 Canv
 - [Tetris](#tetris)
   - [Tabla de contenidos](#tabla-de-contenidos)
   - [Qué hace el proyecto](#qué-hace-el-proyecto)
+  - [Power-ups](#power-ups)
   - [Cómo ejecutar el juego](#cómo-ejecutar-el-juego)
     - [Opción 1: abrir el archivo directamente](#opción-1-abrir-el-archivo-directamente)
     - [Opción 2: servidor local (recomendado)](#opción-2-servidor-local-recomendado)
@@ -46,6 +47,32 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - **Niveles** que aumentan cada 10 líneas y aceleran la caída.
 - **Pausa** y **Game Over** con opción de reinicio.
 - **Modo claro/oscuro**: switch junto al título (por defecto modo oscuro); la preferencia se guarda en `localStorage`.
+- **Power-ups aleatorios** cada 10 líneas completadas (ver más abajo).
+
+---
+
+## Power-ups
+
+Cada **10 líneas** completadas (`POWERUP_EVERY`), la siguiente pieza en aparecer es un power-up: un
+bloque **1 × 1** con un icono, elegido de forma equitativa entre los cinco tipos (**20 % cada uno**).
+Se mueve y se suelta como cualquier otra pieza; el efecto se dispara al bloquearse, tomando como
+**punto de impacto** la celda donde reposa.
+
+| Icono | Nombre       | Efecto                                                                                                          |
+| ----- | ------------ | --------------------------------------------------------------------------------------------------------------- |
+| 💣    | **Bomba**    | Destruye todos los bloques en un radio **3 × 3** alrededor del punto de impacto. Bonus de 10 puntos por bloque.   |
+| ⚡    | **Rayo**     | Vacía por completo la **fila y la columna** del impacto. No cuenta como línea completada (no suma a LINES).       |
+| 🎨    | **Tinte**    | Convierte todos los bloques del **color dominante** en **comodines** dorados.                                     |
+| ⬇️    | **Gravedad** | Compacta el tablero por columnas: elimina todos los huecos, incluido el centro de la tuerca.                       |
+| ❄️    | **Congelar** | Detiene la caída automática durante **5 segundos** (`FREEZE_MS`). Mover, rotar y soltar siguen disponibles.        |
+
+**Cómo funcionan los comodines**: son bloques normales a todos los efectos, salvo que en el
+**siguiente bloqueo** cada comodín rellena los huecos vacíos de su propia fila. Las filas que quedan
+completas se limpian con normalidad, así que un Tinte bien colocado suele encadenar varias líneas.
+Los comodines de filas que no llegan a completarse se quedan en el tablero como bloques corrientes.
+
+La congelación se descuenta con el `dt` del game loop, no con el reloj del sistema: pausar la partida
+**no** consume el tiempo restante.
 
 ---
 
@@ -179,9 +206,12 @@ Algunos parámetros fáciles de tunear en `game.js`:
 | `COLS`         | Columnas del tablero                     | `10`                  |
 | `ROWS`         | Filas del tablero                        | `20`                  |
 | `BLOCK`        | Tamaño en píxeles de cada celda          | `30`                  |
-| `COLORS`       | Paleta de colores por tipo de pieza      | 8 colores             |
-| `LINE_SCORES`  | Puntos por 1, 2, 3 o 4 líneas eliminadas | `[0,100,300,500,800]` |
-| `dropInterval` | Velocidad inicial de caída en ms         | `1000`                |
+| `COLORS`         | Paleta de colores por tipo de pieza       | 14 colores            |
+| `LINE_SCORES`    | Puntos por 1, 2, 3 o 4 líneas eliminadas  | `[0,100,300,500,800]` |
+| `dropInterval`   | Velocidad inicial de caída en ms          | `1000`                |
+| `POWERUP_EVERY`  | Líneas completadas entre power-ups        | `10`                  |
+| `FREEZE_MS`      | Duración del power-up Congelar en ms      | `5000`                |
+| `POWER_ICONS`    | Emoji dibujado sobre cada power-up        | 💣 ⚡ 🎨 ⬇️ ❄️        |
 
 > Si cambias `COLS`, `ROWS` o `BLOCK`, recuerda ajustar también `width` y `height` del `<canvas id="board">` en `index.html` para que coincida (`COLS × BLOCK` × `ROWS × BLOCK`).
 

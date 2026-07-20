@@ -14,6 +14,12 @@ const COLORS = [
   '#64b5f6', // J - azul pálido
   '#ffb74d', // L - orange
   '#9e9e9e', // N - tuerca (gris acero)
+  '#ff7043', // 9  - power-up bomba
+  '#fff176', // 10 - power-up rayo
+  '#f06292', // 11 - power-up tinte
+  '#4db6ac', // 12 - power-up gravedad
+  '#90caf9', // 13 - power-up congelar
+  '#ffd700', // 14 - comodín (solo celda de tablero)
 ];
 
 const PIECES = [
@@ -26,9 +32,24 @@ const PIECES = [
   [[6,0,0],[6,6,6],[0,0,0]],                  // J
   [[0,0,7],[7,7,7],[0,0,0]],                  // L
   [[8,8,8],[8,0,8],[8,8,8]],                  // N - tuerca (anillo con hueco central)
+  [[9]],                                       // power-up bomba
+  [[10]],                                      // power-up rayo
+  [[11]],                                      // power-up tinte
+  [[12]],                                      // power-up gravedad
+  [[13]],                                      // power-up congelar
+  null,                                        // comodín: nunca se genera como pieza
 ];
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
+
+const POWERUP_EVERY = 10;   // líneas completadas entre power-ups
+const FIRST_POWER = 9;
+const LAST_POWER = 13;
+const WILDCARD = 14;
+const FREEZE_MS = 5000;
+// Iconos por tipo de celda: los 5 power-ups más el comodín, que si no se
+// confundiría con el amarillo de la pieza O.
+const CELL_ICONS = { 9: '💣', 10: '⚡', 11: '🎨', 12: '⬇️', 13: '❄️', 14: '✨' };
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -42,11 +63,14 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeToggle = document.getElementById('theme-toggle');
+const freezeIndicator = document.getElementById('freeze-indicator');
+const freezeTimeEl = document.getElementById('freeze-time');
 
 const THEME_KEY = 'tetris-theme';
 const GRID_COLORS = { dark: '#22222e', light: '#d7d7e6' };
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let linesSincePowerUp, pendingPowerUp, freezeRemaining;
 let theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 let gridColor = GRID_COLORS[theme];
 
@@ -58,6 +82,15 @@ function randomPiece() {
   const type = Math.floor(Math.random() * 8) + 1;
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+}
+
+function isPowerUp(type) {
+  return type >= FIRST_POWER && type <= LAST_POWER;
+}
+
+function randomPowerUp() {
+  const type = FIRST_POWER + Math.floor(Math.random() * (LAST_POWER - FIRST_POWER + 1));
+  return { type, shape: [[type]], x: Math.floor(COLS / 2), y: 0 };
 }
 
 function collide(shape, ox, oy) {
@@ -116,6 +149,11 @@ function clearLines() {
     score += (LINE_SCORES[cleared] || 0) * level;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+    linesSincePowerUp += cleared;
+    while (linesSincePowerUp >= POWERUP_EVERY) {
+      linesSincePowerUp -= POWERUP_EVERY;
+      pendingPowerUp = true;
+    }
     updateHUD();
   }
 }
@@ -143,15 +181,88 @@ function softDrop() {
   }
 }
 
+// Comodines creados por el Tinte: rellenan los huecos de su propia fila.
+// Se ejecuta al inicio de cada bloqueo, así los comodines recién creados
+// sobreviven un turno antes de actuar.
+function applyWildcards() {
+  for (let r = 0; r < ROWS; r++) {
+    if (!board[r].includes(WILDCARD)) continue;
+    for (let c = 0; c < COLS; c++)
+      if (board[r][c] === 0) board[r][c] = WILDCARD;
+  }
+}
+
+function powerBomb(x, y) {
+  let destroyed = 0;
+  for (let r = y - 1; r <= y + 1; r++) {
+    if (r < 0 || r >= ROWS) continue;
+    for (let c = x - 1; c <= x + 1; c++) {
+      if (c < 0 || c >= COLS) continue;
+      if (board[r][c]) destroyed++;
+      board[r][c] = 0;
+    }
+  }
+  score += destroyed * 10;
+  updateHUD();
+}
+
+function powerRay(x, y) {
+  board[y].fill(0);
+  for (let r = 0; r < ROWS; r++) board[r][x] = 0;
+}
+
+function powerTint() {
+  const counts = new Array(LAST_POWER + 2).fill(0);
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++) {
+      const v = board[r][c];
+      if (v >= 1 && v <= 8) counts[v]++;
+    }
+  let dominant = 0; // counts[0] siempre 0: gana el primer máximo estricto
+  for (let t = 1; t <= 8; t++) if (counts[t] > counts[dominant]) dominant = t;
+  if (!dominant) return;
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (board[r][c] === dominant) board[r][c] = WILDCARD;
+}
+
+function powerGravity() {
+  for (let c = 0; c < COLS; c++) {
+    const stack = [];
+    for (let r = ROWS - 1; r >= 0; r--)
+      if (board[r][c]) stack.push(board[r][c]);
+    for (let r = ROWS - 1, i = 0; r >= 0; r--, i++)
+      board[r][c] = i < stack.length ? stack[i] : 0;
+  }
+}
+
+function applyPowerUp(piece) {
+  const { type, x, y } = piece;
+  switch (type) {
+    case 9:  powerBomb(x, y); break;
+    case 10: powerRay(x, y); break;
+    case 11: powerTint(); break;
+    case 12: powerGravity(); break;
+    case 13: freezeRemaining = FREEZE_MS; break;
+  }
+}
+
 function lockPiece() {
-  merge();
+  applyWildcards();
+  if (isPowerUp(current.type)) applyPowerUp(current);
+  else merge();
   clearLines();
   spawn();
 }
 
 function spawn() {
   current = next;
-  next = randomPiece();
+  if (pendingPowerUp) {
+    pendingPowerUp = false;
+    next = randomPowerUp();
+  } else {
+    next = randomPiece();
+  }
   if (collide(current.shape, current.x, current.y)) {
     endGame();
     return;
@@ -163,6 +274,9 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  const frozen = freezeRemaining > 0;
+  freezeIndicator.classList.toggle('hidden', !frozen);
+  if (frozen) freezeTimeEl.textContent = (freezeRemaining / 1000).toFixed(1);
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
@@ -174,6 +288,22 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
   // highlight
   context.fillStyle = 'rgba(255,255,255,0.12)';
   context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  context.globalAlpha = 1;
+}
+
+function drawCellIcon(context, x, y, type, size, alpha) {
+  const icon = CELL_ICONS[type];
+  if (!icon) return;
+  context.globalAlpha = alpha ?? 1;
+  context.font = `${Math.floor(size * 0.7)}px sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  // sombra para que el emoji destaque sobre el color del bloque
+  context.shadowColor = 'rgba(0,0,0,0.55)';
+  context.shadowBlur = 3;
+  context.fillText(icon, x * size + size / 2, y * size + size / 2);
+  context.shadowBlur = 0;
+  context.shadowColor = 'transparent';
   context.globalAlpha = 1;
 }
 
@@ -200,20 +330,26 @@ function draw() {
 
   // board
   for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
+    for (let c = 0; c < COLS; c++) {
       drawBlock(ctx, c, r, board[r][c], BLOCK);
+      drawCellIcon(ctx, c, r, board[r][c], BLOCK);
+    }
 
   // ghost
   const gy = ghostY();
   for (let r = 0; r < current.shape.length; r++)
     for (let c = 0; c < current.shape[r].length; c++)
-      if (current.shape[r][c])
+      if (current.shape[r][c]) {
         drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+        drawCellIcon(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+      }
 
   // current piece
   for (let r = 0; r < current.shape.length; r++)
-    for (let c = 0; c < current.shape[r].length; c++)
+    for (let c = 0; c < current.shape[r].length; c++) {
       drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+      drawCellIcon(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+    }
 }
 
 function drawNext() {
@@ -223,8 +359,10 @@ function drawNext() {
   const offX = Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
   for (let r = 0; r < shape.length; r++)
-    for (let c = 0; c < shape[r].length; c++)
+    for (let c = 0; c < shape[r].length; c++) {
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
+      drawCellIcon(nextCtx, offX + c, offY + r, shape[r][c], NB);
+    }
 }
 
 function endGame() {
@@ -267,7 +405,14 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
-  dropAccum += dt;
+  if (freezeRemaining > 0) {
+    // congelación medida en dt: la pausa no consume el tiempo restante
+    freezeRemaining = Math.max(0, freezeRemaining - dt);
+    dropAccum = 0;
+    updateHUD();
+  } else {
+    dropAccum += dt;
+  }
   if (dropAccum >= dropInterval) {
     dropAccum = 0;
     if (!collide(current.shape, current.x, current.y + 1)) {
@@ -290,6 +435,9 @@ function init() {
   gameOver = false;
   dropInterval = 1000;
   dropAccum = 0;
+  linesSincePowerUp = 0;
+  pendingPowerUp = false;
+  freezeRemaining = 0;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
