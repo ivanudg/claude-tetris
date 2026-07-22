@@ -83,12 +83,41 @@ const PASTEL_PALETTE = [
   '#d0d0d8', // 20 - basura
 ];
 
+// Paleta neón para tema claro: los tonos neón puros (cian/amarillo brillantes)
+// se pierden sobre un lienzo pálido, así que en claro se usan versiones más
+// saturadas y oscuras, y el monominó (18) se oscurece para no desaparecer.
+const NEON_PALETTE_LIGHT = [
+  null,
+  '#00acc1', // I - cian
+  '#f9a825', // O - ámbar
+  '#9c27b0', // T - magenta
+  '#00a152', // S - verde
+  '#d50000', // Z - rojo
+  '#1565c0', // J - azul
+  '#ef6c00', // L - naranja
+  '#78909c', // 8  - tuerca
+  '#dd2c00', // 9  - bomba
+  '#fbc02d', // 10 - rayo
+  '#e91e63', // 11 - tinte
+  '#00897b', // 12 - gravedad
+  '#0288d1', // 13 - congelar
+  '#fbc02d', // 14 - comodín
+  '#ec407a', // 15 - pentominó cruz
+  '#43a047', // 16 - pentominó copa
+  '#ab47bc', // 17 - pentominó Y
+  '#37474f', // 18 - monominó
+  '#455a64', // 19 - indestructible
+  '#607d8b', // 20 - basura
+];
+
 // Las funciones drawBlock* son declaraciones (hoisted), así que se pueden
-// referenciar aquí aunque estén definidas más abajo. `canvasBg: null` = usar el
+// referenciar aquí aunque estén definidas más abajo. Cada campo dependiente del
+// tema (palette/canvasBg/grid) puede ser un valor fijo o un objeto {dark, light}
+// que `themeValue()` resuelve según el tema activo. `canvasBg: null` = usar el
 // fondo del CSS/clearRect; `grid: null` = usar GRID_COLORS[theme].
 const SKINS = {
   retro:  { label: 'Retro',     palette: COLORS,         canvasBg: null,      grid: null,      draw: drawBlockFlat },
-  neon:   { label: 'Neón',      palette: NEON_PALETTE,   canvasBg: '#05050a', grid: '#1b2340', draw: drawBlockNeon },
+  neon:   { label: 'Neón',      palette: { dark: NEON_PALETTE, light: NEON_PALETTE_LIGHT }, canvasBg: { dark: '#05050a', light: '#eef1ff' }, grid: { dark: '#1b2340', light: '#c3cbee' }, draw: drawBlockNeon },
   pastel: { label: 'Pastel',    palette: PASTEL_PALETTE, canvasBg: null,      grid: null,      draw: drawBlockRounded },
   pixel:  { label: 'Pixel art', palette: COLORS,         canvasBg: null,      grid: null,      draw: drawBlockPixel },
 };
@@ -328,7 +357,7 @@ let gridColor = GRID_COLORS[theme];
 // resetea, igual que theme/muted/challenge). `activeColors` es la paleta del
 // skin en curso; drawBlock y burstRow leen de ahí, no de COLORS directamente.
 let skin = SKINS[localStorage.getItem(SKIN_KEY)] ? localStorage.getItem(SKIN_KEY) : 'retro';
-let activeColors = SKINS[skin].palette;
+let activeColors = activePalette();
 // Índice de la entrada del top recién conseguida (para resaltarla). Es estado de
 // UI, no de partida: init() no lo toca; showMenu() lo reinicia a -1.
 let newRecordIndex = -1;
@@ -1046,10 +1075,23 @@ function drawBlockPixel(context, x, y, colorIndex, size, alpha) {
   context.globalAlpha = 1;
 }
 
+// Resuelve un campo del skin dependiente del tema: si es un objeto {dark, light}
+// devuelve la variante del tema activo; si no, el valor tal cual (o null). Ojo:
+// las paletas son arrays, no objetos {dark,light}, así que se devuelven íntegras.
+function themeValue(v) {
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v[theme] ?? null;
+  return v ?? null;
+}
+
+// Paleta de colores del skin para el tema activo (Neón la cambia; el resto es fija).
+function activePalette() {
+  return themeValue(SKINS[skin].palette);
+}
+
 // Pinta el fondo del lienzo si el skin define uno propio (p. ej. el negro de
-// Neón); si no, deja el clearRect/CSS decidir.
+// Neón); si no, deja el clearRect/CSS decidir. Depende del tema activo.
 function paintCanvasBg(context, w, h) {
-  const bg = SKINS[skin].canvasBg;
+  const bg = themeValue(SKINS[skin].canvasBg);
   if (!bg) return;
   context.fillStyle = bg;
   context.fillRect(0, 0, w, h);
@@ -1058,7 +1100,7 @@ function paintCanvasBg(context, w, h) {
 // Color de rejilla efectivo: el skin puede forzar el suyo (Neón sobre negro);
 // si no, se usa el del tema claro/oscuro. Lo comparten applyTheme y applySkin.
 function resolveGridColor() {
-  return SKINS[skin].grid ?? GRID_COLORS[theme];
+  return themeValue(SKINS[skin].grid) ?? GRID_COLORS[theme];
 }
 
 function drawCellIcon(context, x, y, type, size, alpha) {
@@ -1610,13 +1652,14 @@ function updateMutatorBadges() {
 
 function applyTheme() {
   document.body.classList.toggle('light', theme === 'light');
+  activeColors = activePalette();  // Neón cambia de paleta según el tema
   gridColor = resolveGridColor();
   themeToggle.setAttribute('aria-checked', theme === 'light' ? 'true' : 'false');
   themeToggle.setAttribute('aria-label', theme === 'light' ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
 }
 
 function applySkin() {
-  activeColors = SKINS[skin].palette;
+  activeColors = activePalette();
   document.body.dataset.skin = skin;   // hook CSS del chrome (fondo/acentos)
   gridColor = resolveGridColor();
   skinSelect.value = skin;
@@ -1637,6 +1680,7 @@ function toggleTheme() {
   applyTheme();
   draw();
   drawNext();
+  drawHold();
 }
 
 function togglePause() {

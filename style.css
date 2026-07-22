@@ -606,9 +606,11 @@ kbd {
 }
 
 /* ---- Chrome por skin (Retro = default, sin override) ---- */
-/* Neón: siempre oscuro y con acentos de neón, aunque el tema sea claro. */
-body[data-skin="neon"],
-body[data-skin="neon"].light {
+/* Cada skin define su identidad (acentos, glow) y respeta el tema activo:
+   la variante base es la oscura y `.light` aporta la clara. */
+
+/* Neón (oscuro): glow de neón sobre lienzo casi negro. */
+body[data-skin="neon"] {
   --bg: #05050a;
   --fg: #d7faff;
   --title-color: #18ffff;
@@ -627,12 +629,49 @@ body[data-skin="neon"].light {
   --energy-glow: rgba(24, 255, 255, 0.5);
 }
 
+/* Neón (claro): mismos acentos de neón pero cromo luminoso y saturado. */
+body[data-skin="neon"].light {
+  --bg: #eef1ff;
+  --fg: #17203a;
+  --title-color: #d500f9;
+  --title-glow: rgba(213, 0, 249, 0.3);
+  --surface: #ffffff;
+  --border: #c6cef0;
+  --board-shadow: rgba(0, 172, 193, 0.3);
+  --overlay-bg: rgba(238, 241, 255, 0.85);
+  --overlay-score-color: #0097a7;
+  --accent: #d500f9;
+  --accent-color-contrast: #ffffff;
+  --accent-hover: #e040fb;
+  --accent-glow: rgba(213, 0, 249, 0.4);
+  --value-color: #0097a7;
+  --energy-color: #00acc1;
+  --energy-glow: rgba(0, 172, 193, 0.4);
+}
+
 body[data-skin="neon"] #board {
   box-shadow: 0 0 60px var(--board-shadow);
 }
 
-/* Pastel: fondos suaves y acentos apagados (respeta claro/oscuro por debajo). */
+/* Pastel (oscuro): cromo apagado y malva sobre el que lucen las piezas pastel. */
 body[data-skin="pastel"] {
+  --bg: #232030;
+  --fg: #e8e0f0;
+  --title-color: #d9b8e8;
+  --title-glow: rgba(217, 184, 232, 0.35);
+  --surface: #2c2838;
+  --border: #3d3550;
+  --accent: #c79fd6;
+  --accent-color-contrast: #232030;
+  --accent-hover: #d9b8e8;
+  --accent-glow: rgba(199, 159, 214, 0.4);
+  --value-color: #d9b8e8;
+  --overlay-bg: rgba(35, 32, 48, 0.8);
+  --overlay-score-color: #d9b8e8;
+}
+
+/* Pastel (claro): fondos lechosos y acentos malva apagados. */
+body[data-skin="pastel"].light {
   --bg: #f3eef7;
   --fg: #4a4458;
   --title-color: #b48ec4;
@@ -644,10 +683,8 @@ body[data-skin="pastel"] {
   --accent-hover: #c9a7d6;
   --accent-glow: rgba(180, 142, 196, 0.4);
   --value-color: #a17bb3;
-}
-
-body[data-skin="pastel"].light {
-  --bg: #f3eef7;
+  --overlay-bg: rgba(243, 238, 247, 0.85);
+  --overlay-score-color: #a17bb3;
 }
 
 /* Pixel art: acentos marcados y render nítido de los canvases. */
