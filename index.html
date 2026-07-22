@@ -134,6 +134,30 @@
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
 
+        <div id="records-panel" class="records-panel hidden">
+          <p class="records-title">🏆 MEJORES PUNTUACIONES</p>
+          <ol id="records-list" class="records-list"></ol>
+          <p id="records-empty" class="records-empty hidden">Aún no hay récords</p>
+          <div class="records-stats">
+            <div class="records-stat">
+              <span class="label">MEJOR COMBO</span>
+              <span class="value" id="record-combo">—</span>
+            </div>
+            <div class="records-stat">
+              <span class="label">LÍNEAS MÁX.</span>
+              <span class="value" id="record-lines">0</span>
+            </div>
+          </div>
+          <div id="name-entry" class="name-entry hidden">
+            <label for="record-name">¡Nuevo récord! Tu nombre:</label>
+            <div class="name-entry-row">
+              <input type="text" id="record-name" maxlength="8" autocomplete="off" placeholder="AAA" />
+              <button id="save-record-btn" type="button">Guardar</button>
+            </div>
+          </div>
+          <button id="reset-records-btn" type="button" class="reset-records-btn">Borrar récords</button>
+        </div>
+
         <div id="challenge-config" class="challenge-config hidden" data-mode="classic">
           <label class="challenge-field" for="mode-select">
             <span>Modo de juego</span>
