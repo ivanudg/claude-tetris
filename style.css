@@ -58,6 +58,37 @@ body.light {
   --energy-glow: rgba(14, 116, 144, 0.35);
 }
 
+/* ---- Skins visuales (ortogonales al tema claro/oscuro) ---- */
+/* Neón: fondo negro y acentos brillantes. Fuerza el board a negro con glow
+   independientemente del tema. */
+body.skin-neon {
+  --bg: #05060a;
+  --surface: #000000;
+  --border: #1a2a3a;
+  --board-shadow: rgba(0, 240, 255, 0.35);
+  --title-color: #00f0ff;
+  --title-glow: rgba(0, 240, 255, 0.6);
+  --accent: #00f0ff;
+  --accent-glow: rgba(0, 240, 255, 0.6);
+  --value-color: #00f0ff;
+  --overlay-score-color: #00f0ff;
+}
+
+/* Pastel: superficies suaves y cálidas. */
+body.skin-pastel {
+  --surface: #f7f3fb;
+  --border: #e3d8ec;
+  --board-shadow: rgba(180, 150, 210, 0.3);
+}
+body.skin-pastel.light {
+  --surface: #fdfbff;
+}
+
+/* Pixel art: superficie ligeramente más oscura para resaltar los sprites. */
+body.skin-pixel {
+  --board-shadow: rgba(0, 0, 0, 0.55);
+}
+
 body {
   background: var(--bg);
   color: var(--fg);
@@ -467,6 +498,30 @@ kbd {
 }
 
 .mute-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Selector de skin ---- */
+.skin-select {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--fg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.skin-select:hover {
+  border-color: var(--accent);
+}
+
+.skin-select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

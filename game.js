@@ -28,6 +28,34 @@ const COLORS = [
   '#78787f', // 20 - línea basura (modo Supervivencia)
 ];
 
+// ---------------------------------------------------------------------------
+// Skins visuales (ortogonales al tema claro/oscuro). Cada skin tiene una paleta
+// `colors` con los MISMOS índices y longitud que COLORS (0 = null) y una función
+// `block` que dibuja una celda. El render lee la paleta y la función del skin
+// ACTIVO (`skin`), nunca COLORS directamente. `retro` reproduce el render
+// original al detalle (regresión visual cero). `grid` es un color de rejilla
+// opcional por skin; si falta se usa `gridColor` (dependiente del tema).
+// Los índices de paleta que faltan hacen fallback a COLORS, por seguridad.
+const NEON_COLORS = [
+  null,
+  '#00f0ff', '#fff000', '#d000ff', '#00ff66', '#ff2d55', '#2d7bff', '#ff9500',
+  '#b0b0c0', '#ff5a1f', '#fff34d', '#ff4da6', '#1fffe0', '#4db8ff', '#ffe000',
+  '#ff6fae', '#6bff8f', '#d97bff', '#ffffff', '#5a5a6a', '#8a8a95',
+];
+const PASTEL_COLORS = [
+  null,
+  '#a5e8ef', '#ffe9a8', '#dcb8e8', '#b8e0bd', '#f2b8b8', '#b8cef0', '#ffd9a8',
+  '#cfcfd8', '#ffc4a8', '#fff3c0', '#f6c0d6', '#b8e0dc', '#cfe4f6', '#ffeda8',
+  '#f6c8dc', '#cfe8d0', '#e0c8ec', '#ffffff', '#b0b0bc', '#c4c4cc',
+];
+
+const SKINS = {
+  retro:  { label: 'Retro',     colors: COLORS,        block: retroBlock },
+  neon:   { label: 'Neón',      colors: NEON_COLORS,   block: neonBlock, grid: '#12202a' },
+  pastel: { label: 'Pastel',    colors: PASTEL_COLORS, block: pastelBlock },
+  pixel:  { label: 'Pixel art', colors: COLORS,        block: pixelBlock },
+};
+
 const PIECES = [
   null,
   [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
@@ -201,6 +229,7 @@ const skillMenu = document.getElementById('skill-menu');
 const skillList = document.getElementById('skill-list');
 const skillEnergyFill = document.getElementById('skill-energy-fill');
 const skillEnergyValueEl = document.getElementById('skill-energy-value');
+const skinSelect = document.getElementById('skin-select');
 
 const THEME_KEY = 'tetris-theme';
 const GRID_COLORS = { dark: '#22222e', light: '#d7d7e6' };
@@ -233,6 +262,11 @@ let energy, holdType, canHold, visionRemaining, slowRemaining, undoSnapshot, ski
 let shownEnergy = -1; // última energía pintada: el HUD se refresca cada frame
 let theme = localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 let gridColor = GRID_COLORS[theme];
+// Skin visual, ortogonal al tema. Persistido en localStorage; se valida contra
+// SKINS para tolerar valores viejos o corruptos.
+const SKIN_KEY = 'tetris-skin';
+let skin = localStorage.getItem(SKIN_KEY) || 'retro';
+if (!SKINS[skin]) skin = 'retro';
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -861,15 +895,95 @@ function updateObjectiveHUD() {
       Math.max(0, (challenge.garbageEveryMs - garbageAccum) / 1000).toFixed(1);
 }
 
+// Despachador: resuelve el color desde la paleta del skin ACTIVO y delega el
+// dibujo en su función de bloque. Todos los llamadores (draw, drawPieceBox,
+// drawNext, drawHold) pasan por aquí, así el skin se aplica de forma uniforme.
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
-  context.globalAlpha = alpha ?? 1;
+  const sk = SKINS[skin] || SKINS.retro;
+  const color = sk.colors[colorIndex] || COLORS[colorIndex];
+  sk.block(context, x, y, color, size, alpha ?? 1);
+}
+
+// Traza un rectángulo redondeado (para el skin pastel). No usa CanvasRenderingContext2D.roundRect
+// para no depender de su soporte y funcionar en cualquier navegador.
+function roundRectPath(context, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  context.beginPath();
+  context.moveTo(x + rr, y);
+  context.arcTo(x + w, y, x + w, y + h, rr);
+  context.arcTo(x + w, y + h, x, y + h, rr);
+  context.arcTo(x, y + h, x, y, rr);
+  context.arcTo(x, y, x + w, y, rr);
+  context.closePath();
+}
+
+// Retro: bloque cuadrado plano con highlight superior. IDÉNTICO al render
+// original (fillRect + banda blanca de 4px). No cambiar sin romper la regresión.
+function retroBlock(context, x, y, color, size, alpha) {
+  context.globalAlpha = alpha;
   context.fillStyle = color;
   context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
   context.fillStyle = 'rgba(255,255,255,0.12)';
   context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  context.globalAlpha = 1;
+}
+
+// Neón: relleno tenue + borde brillante con glow (shadowBlur). El fondo negro
+// lo pone la clase body.skin-neon en CSS.
+function neonBlock(context, x, y, color, size, alpha) {
+  const px = x * size, py = y * size;
+  context.globalAlpha = alpha * 0.28;
+  context.fillStyle = color;
+  context.fillRect(px + 2, py + 2, size - 4, size - 4);
+  context.globalAlpha = alpha;
+  context.shadowColor = color;
+  context.shadowBlur = size * 0.5;
+  context.strokeStyle = color;
+  context.lineWidth = 2;
+  context.strokeRect(px + 3, py + 3, size - 6, size - 6);
+  context.shadowBlur = 0;
+  context.shadowColor = 'transparent';
+  context.globalAlpha = 1;
+}
+
+// Pastel: colores suaves con esquinas redondeadas simuladas y un highlight tenue.
+function pastelBlock(context, x, y, color, size, alpha) {
+  const px = x * size + 1, py = y * size + 1, s = size - 2;
+  const r = Math.max(2, size * 0.22);
+  context.globalAlpha = alpha;
+  roundRectPath(context, px, py, s, s, r);
+  context.fillStyle = color;
+  context.fill();
+  context.globalAlpha = alpha * 0.5;
+  roundRectPath(context, px + 2, py + 2, s - 4, Math.max(2, s * 0.38), r * 0.6);
+  context.fillStyle = 'rgba(255,255,255,0.4)';
+  context.fill();
+  context.globalAlpha = 1;
+}
+
+// Pixel art: relleno plano + textura de dithering + bisel (claro arriba/izq,
+// oscuro abajo/der) para un aspecto de sprite chunky.
+function pixelBlock(context, x, y, color, size, alpha) {
+  const px = x * size, py = y * size;
+  const u = size / 8; // unidad de "píxel"
+  context.globalAlpha = alpha;
+  context.fillStyle = color;
+  context.fillRect(px + 1, py + 1, size - 2, size - 2);
+  // dithering: puntos oscuros en un patrón fijo
+  context.fillStyle = 'rgba(0,0,0,0.16)';
+  for (let i = 1; i < 8; i += 2)
+    for (let j = 1; j < 8; j += 2)
+      if ((i + j) % 4 === 0)
+        context.fillRect(px + i * u, py + j * u, u, u);
+  // bisel claro (arriba + izquierda)
+  context.fillStyle = 'rgba(255,255,255,0.35)';
+  context.fillRect(px + 1, py + 1, size - 2, u);
+  context.fillRect(px + 1, py + 1, u, size - 2);
+  // bisel oscuro (abajo + derecha)
+  context.fillStyle = 'rgba(0,0,0,0.35)';
+  context.fillRect(px + 1, py + size - 1 - u, size - 2, u);
+  context.fillRect(px + size - 1 - u, py + 1, u, size - 2);
   context.globalAlpha = 1;
 }
 
@@ -890,7 +1004,7 @@ function drawCellIcon(context, x, y, type, size, alpha) {
 }
 
 function drawGrid() {
-  ctx.strokeStyle = gridColor;
+  ctx.strokeStyle = (SKINS[skin] && SKINS[skin].grid) || gridColor;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -931,7 +1045,7 @@ function spawnParticles(cx, cy, count, color) {
 function burstRow(row, fallbackColor) {
   const cy = row.y * BLOCK + BLOCK / 2;
   for (let c = 0; c < COLS; c++)
-    spawnParticles(c * BLOCK + BLOCK / 2, cy, 5, COLORS[row.cells[c]] || fallbackColor);
+    spawnParticles(c * BLOCK + BLOCK / 2, cy, 5, (SKINS[skin] || SKINS.retro).colors[row.cells[c]] || fallbackColor);
 }
 
 function spawnFloatText(text, y, color, size) {
@@ -1316,6 +1430,21 @@ function toggleTheme() {
   drawNext();
 }
 
+// Aplica el skin activo: clase de body (chrome/fondo) + selector, y repinta sin
+// recargar (imita a toggleTheme). El repintado se salta si aún no hay partida
+// (arranque previo a init(), como hace applyTheme con el grid).
+function applySkin() {
+  if (!SKINS[skin]) skin = 'retro';
+  document.body.classList.remove('skin-neon', 'skin-pastel', 'skin-pixel');
+  if (skin !== 'retro') document.body.classList.add('skin-' + skin);
+  if (skinSelect) skinSelect.value = skin;
+  if (board) {
+    draw();
+    drawNext();
+    drawHold();
+  }
+}
+
 function togglePause() {
   if (gameOver) return;
   paused = !paused;
@@ -1513,8 +1642,14 @@ modeSelect.addEventListener('change', () => {
 
 themeToggle.addEventListener('click', toggleTheme);
 muteToggle.addEventListener('click', toggleMute);
+skinSelect.addEventListener('change', () => {
+  skin = SKINS[skinSelect.value] ? skinSelect.value : 'retro';
+  localStorage.setItem(SKIN_KEY, skin);
+  applySkin();
+});
 
 applyTheme();
+applySkin();
 applyMute();
 challengeConfig.dataset.mode = modeSelect.value;
 init();
