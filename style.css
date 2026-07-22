@@ -581,6 +581,89 @@ kbd {
   outline-offset: 2px;
 }
 
+/* ---- Selector de skin ---- */
+.skin-select {
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--fg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.skin-select:hover {
+  border-color: var(--accent);
+}
+
+.skin-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Chrome por skin (Retro = default, sin override) ---- */
+/* Neón: siempre oscuro y con acentos de neón, aunque el tema sea claro. */
+body[data-skin="neon"],
+body[data-skin="neon"].light {
+  --bg: #05050a;
+  --fg: #d7faff;
+  --title-color: #18ffff;
+  --title-glow: rgba(24, 255, 255, 0.55);
+  --surface: #0b0b16;
+  --border: #1b2340;
+  --board-shadow: rgba(24, 255, 255, 0.35);
+  --overlay-bg: rgba(5, 5, 12, 0.82);
+  --overlay-score-color: #18ffff;
+  --accent: #e040fb;
+  --accent-color-contrast: #05050a;
+  --accent-hover: #ff6bff;
+  --accent-glow: rgba(224, 64, 251, 0.6);
+  --value-color: #18ffff;
+  --energy-color: #18ffff;
+  --energy-glow: rgba(24, 255, 255, 0.5);
+}
+
+body[data-skin="neon"] #board {
+  box-shadow: 0 0 60px var(--board-shadow);
+}
+
+/* Pastel: fondos suaves y acentos apagados (respeta claro/oscuro por debajo). */
+body[data-skin="pastel"] {
+  --bg: #f3eef7;
+  --fg: #4a4458;
+  --title-color: #b48ec4;
+  --title-glow: rgba(180, 142, 196, 0.35);
+  --surface: #fbf7fe;
+  --border: #e3d7ec;
+  --accent: #b48ec4;
+  --accent-color-contrast: #ffffff;
+  --accent-hover: #c9a7d6;
+  --accent-glow: rgba(180, 142, 196, 0.4);
+  --value-color: #a17bb3;
+}
+
+body[data-skin="pastel"].light {
+  --bg: #f3eef7;
+}
+
+/* Pixel art: acentos marcados y render nítido de los canvases. */
+body[data-skin="pixel"] {
+  --accent: #ffb300;
+  --accent-glow: rgba(255, 179, 0, 0.5);
+  --title-color: #ffb300;
+  --title-glow: rgba(255, 179, 0, 0.4);
+}
+
+body[data-skin="pixel"] #board,
+body[data-skin="pixel"] #next-canvas,
+body[data-skin="pixel"] #hold-canvas {
+  image-rendering: pixelated;
+}
+
 /* ---- Overlay ---- */
 .overlay {
   position: absolute;
