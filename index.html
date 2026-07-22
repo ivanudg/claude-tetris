@@ -170,6 +170,39 @@
         <p class="skill-hint">1–4 para activar · <kbd>Esc</kbd> volver</p>
       </div>
     </div>
+
+    <!-- Overlay propio de pausa: #overlay ya despacha tres estados desde restartBtn. -->
+    <div id="pause-menu" class="overlay pause-menu hidden">
+      <div class="overlay-box">
+        <p class="pause-menu-title">PAUSA</p>
+
+        <div class="pause-actions">
+          <button id="pause-resume-btn" type="button">Reanudar</button>
+          <button id="pause-restart-btn" type="button">Reiniciar</button>
+        </div>
+
+        <label class="pause-level-field" for="start-level-select">
+          <span>Nivel inicial <small>(próxima partida)</small></span>
+          <select id="start-level-select"></select>
+        </label>
+
+        <div class="pause-controls">
+          <span class="label">CONTROLES</span>
+          <ul>
+            <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+            <li><kbd>↑</kbd><kbd>X</kbd> rotar</li>
+            <li><kbd>Z</kbd> rotar al revés</li>
+            <li><kbd>↓</kbd> bajar</li>
+            <li><kbd>Space</kbd> caída</li>
+            <li><kbd>C</kbd><kbd>Shift</kbd> reservar</li>
+            <li><kbd>E</kbd> habilidades</li>
+            <li><kbd>P</kbd> pausa</li>
+          </ul>
+        </div>
+
+        <p class="pause-hint"><kbd>P</kbd> / <kbd>Esc</kbd> reanudar</p>
+      </div>
+    </div>
   </div>
 
   <script src="game.js"></script>
