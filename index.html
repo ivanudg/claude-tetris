@@ -144,6 +144,11 @@
             </select>
           </label>
 
+          <label class="challenge-field" for="start-level-select-menu">
+            <span>Nivel inicial</span>
+            <select id="start-level-select-menu"></select>
+          </label>
+
           <fieldset class="challenge-mutators">
             <legend>Modificadores</legend>
             <label><input type="checkbox" id="mut-puzzle" /> 🧩 Tablero puzzle <small>(bloques indestructibles)</small></label>
@@ -168,6 +173,35 @@
         </div>
         <ul id="skill-list" class="skill-list"></ul>
         <p class="skill-hint">1–4 para activar · <kbd>Esc</kbd> volver</p>
+      </div>
+    </div>
+
+    <!-- Overlay propio del menú de pausa, hermano de #skill-menu. -->
+    <div id="pause-menu" class="overlay pause-menu hidden">
+      <div class="overlay-box">
+        <p class="pause-menu-title">PAUSA</p>
+
+        <label class="pause-field" for="start-level-select">
+          <span>Nivel inicial</span>
+          <select id="start-level-select"></select>
+        </label>
+
+        <div class="pause-buttons">
+          <button id="resume-btn" class="menu-btn" type="button">Reanudar</button>
+          <button id="pause-restart-btn" class="menu-btn" type="button">Reiniciar</button>
+          <button id="controls-toggle-btn" class="menu-btn menu-btn-secondary" type="button">Ver controles</button>
+        </div>
+
+        <ul id="pause-controls" class="controls-list hidden">
+          <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+          <li><kbd>↑</kbd><kbd>X</kbd> rotar</li>
+          <li><kbd>Z</kbd> rotar al revés</li>
+          <li><kbd>↓</kbd> bajar</li>
+          <li><kbd>Space</kbd> caída</li>
+          <li><kbd>C</kbd><kbd>Shift</kbd> reservar</li>
+          <li><kbd>E</kbd> habilidades</li>
+          <li><kbd>P</kbd><kbd>Esc</kbd> pausa</li>
+        </ul>
       </div>
     </div>
   </div>
