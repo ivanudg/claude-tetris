@@ -201,8 +201,16 @@ const skillMenu = document.getElementById('skill-menu');
 const skillList = document.getElementById('skill-list');
 const skillEnergyFill = document.getElementById('skill-energy-fill');
 const skillEnergyValueEl = document.getElementById('skill-energy-value');
+const nameEntry = document.getElementById('name-entry');
+const nameInput = document.getElementById('name-input');
+const saveScoreBtn = document.getElementById('save-score-btn');
+const recordsPanel = document.getElementById('records');
+const recordsList = document.getElementById('records-list');
+const recordsStats = document.getElementById('records-stats');
+const resetScoresBtn = document.getElementById('reset-scores-btn');
 
 const THEME_KEY = 'tetris-theme';
+const SCORES_KEY = 'tetris-scores';
 const GRID_COLORS = { dark: '#22222e', light: '#d7d7e6' };
 
 // `queue` sustituye a la antigua variable `next`: la Visión de Futuro necesita
@@ -213,6 +221,8 @@ let linesSincePowerUp, pendingPowerUp, pendingMonomino, freezeRemaining;
 // limpieza: el bonus solo aplica desde combo >= 1 (convención estándar).
 let combo, maxCombo, backToBack;
 let shownCombo = -1; // último combo pintado en el HUD, para no reiniciar el pulso cada frame
+// Partida pendiente de nombre para la tabla de récords (se fija en endGame/winGame).
+let pendingScoreEntry = null;
 // Última acción de la pieza activa: el T-Spin solo cuenta si acabó en rotación.
 let lastActionWasRotation, lastKick;
 // Efectos visuales (todos avanzan con el dt del loop, nunca con reloj de pared).
@@ -1242,6 +1252,134 @@ const END_TITLES = {
   crushed: 'APLASTADO',
 };
 
+// ─── Tabla de récords (localStorage) ──────────────────────────────────────
+const MAX_SCORES = 5;
+
+// Estructura por defecto: se usa también como red de seguridad ante datos rotos.
+function defaultScores() {
+  return { top: [], bestCombo: 0, maxLines: 0 };
+}
+
+// Carga tolerante a corrupción: cualquier fallo devuelve la estructura por defecto.
+function loadScores() {
+  try {
+    const raw = localStorage.getItem(SCORES_KEY);
+    if (!raw) return defaultScores();
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return defaultScores();
+    const top = Array.isArray(data.top)
+      ? data.top
+          .filter((e) => e && typeof e === 'object')
+          .map((e) => ({
+            name: typeof e.name === 'string' && e.name ? e.name : '???',
+            score: Number(e.score) || 0,
+            lines: Number(e.lines) || 0,
+            level: Number(e.level) || 0,
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, MAX_SCORES)
+      : [];
+    return {
+      top,
+      bestCombo: Number(data.bestCombo) || 0,
+      maxLines: Number(data.maxLines) || 0,
+    };
+  } catch (e) {
+    return defaultScores();
+  }
+}
+
+function saveScores(data) {
+  try {
+    localStorage.setItem(SCORES_KEY, JSON.stringify(data));
+  } catch (e) {
+    /* almacenamiento no disponible: se ignora */
+  }
+}
+
+// ¿La puntuación entra en el top 5?
+function qualifiesForTop(scoreVal, data) {
+  if (scoreVal <= 0) return false;
+  if (data.top.length < MAX_SCORES) return true;
+  return scoreVal > data.top[data.top.length - 1].score;
+}
+
+// Pinta la tabla de récords; highlightIndex resalta la fila recién lograda.
+function renderScores(highlightIndex = -1) {
+  const data = loadScores();
+  recordsList.innerHTML = '';
+  if (data.top.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'records-empty';
+    li.textContent = 'Sin récords todavía';
+    recordsList.appendChild(li);
+  } else {
+    data.top.forEach((entry, i) => {
+      const li = document.createElement('li');
+      if (i === highlightIndex) li.classList.add('records-new');
+      const name = document.createElement('span');
+      name.className = 'records-name';
+      name.textContent = `${i + 1}. ${entry.name}`;
+      const sc = document.createElement('span');
+      sc.className = 'records-score';
+      sc.textContent = entry.score.toLocaleString();
+      li.appendChild(name);
+      li.appendChild(sc);
+      recordsList.appendChild(li);
+    });
+  }
+  // Combo consistente con el HUD, que muestra x(combo + 1).
+  recordsStats.textContent =
+    `Mejor combo: x${data.bestCombo + 1} · Líneas máx.: ${data.maxLines}`;
+}
+
+// Actualiza los récords persistentes por-partida (combo y líneas) al terminar.
+// Devuelve los scores ya con esas estadísticas guardadas.
+function commitRunStats() {
+  const data = loadScores();
+  data.bestCombo = Math.max(data.bestCombo, maxCombo);
+  data.maxLines = Math.max(data.maxLines, lines);
+  saveScores(data);
+  return data;
+}
+
+// Al terminar la partida: guarda combo/líneas y muestra el input si califica.
+function handleGameEnd() {
+  const data = commitRunStats();
+  pendingScoreEntry = null;
+  if (qualifiesForTop(score, data)) {
+    pendingScoreEntry = { score, lines, level };
+    nameEntry.classList.remove('hidden');
+    nameInput.value = '';
+  } else {
+    nameEntry.classList.add('hidden');
+  }
+  renderScores();
+  recordsPanel.classList.remove('hidden');
+  if (pendingScoreEntry) nameInput.focus();
+}
+
+// Confirma el nombre e inserta la partida pendiente en el top 5.
+function saveScoreEntry() {
+  if (!pendingScoreEntry) return;
+  const data = loadScores();
+  const name = (nameInput.value || '').trim().slice(0, 12) || 'Anónimo';
+  const entry = {
+    name,
+    score: pendingScoreEntry.score,
+    lines: pendingScoreEntry.lines,
+    level: pendingScoreEntry.level,
+  };
+  data.top.push(entry);
+  data.top.sort((a, b) => b.score - a.score);
+  data.top = data.top.slice(0, MAX_SCORES);
+  saveScores(data);
+  const idx = data.top.indexOf(entry);
+  pendingScoreEntry = null;
+  nameEntry.classList.add('hidden');
+  renderScores(idx);
+}
+
 function endGame(reason = 'topout') {
   if (gameOver) return; // pushGarbageRow() puede detectar la derrota dos veces
   gameOver = true;
@@ -1249,6 +1387,7 @@ function endGame(reason = 'topout') {
   overlayTitle.textContent = END_TITLES[reason] || END_TITLES.topout;
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()} · Combo máx.: x${maxCombo + 1}`;
   showOverlay(false);
+  handleGameEnd();
   emitEvent('game-over', {});
 }
 
@@ -1261,6 +1400,7 @@ function winGame() {
   overlayScore.textContent =
     `${lines} líneas · Puntuación: ${score.toLocaleString()} · Tiempo restante: ${secs}s`;
   showOverlay(false);
+  handleGameEnd();
   emitEvent('challenge-win', {});
 }
 
@@ -1269,6 +1409,10 @@ function winGame() {
 function showOverlay(withConfig) {
   challengeConfig.classList.toggle('hidden', !withConfig);
   restartBtn.textContent = withConfig ? 'Jugar' : 'Volver al menú';
+  // Récords y captura de nombre solo los reactivan showMenu()/handleGameEnd();
+  // así la pausa (que también llama aquí) no los muestra.
+  recordsPanel.classList.add('hidden');
+  nameEntry.classList.add('hidden');
   overlay.classList.remove('hidden');
 }
 
@@ -1279,6 +1423,8 @@ function showMenu() {
   overlayTitle.textContent = 'TETRIS';
   overlayScore.textContent = 'Elige un desafío';
   showOverlay(true);
+  renderScores();
+  recordsPanel.classList.remove('hidden');
 }
 
 // Lee el menú en `challenge` y arranca la partida.
@@ -1413,6 +1559,8 @@ function init() {
   combo = -1;
   maxCombo = 0;
   shownCombo = -1;
+  pendingScoreEntry = null;
+  nameEntry.classList.add('hidden');
   backToBack = false;
   lastActionWasRotation = false;
   lastKick = 0;
@@ -1513,6 +1661,21 @@ modeSelect.addEventListener('change', () => {
 
 themeToggle.addEventListener('click', toggleTheme);
 muteToggle.addEventListener('click', toggleMute);
+
+// Tabla de récords: guardar nombre (botón o Enter) y resetear.
+saveScoreBtn.addEventListener('click', saveScoreEntry);
+nameInput.addEventListener('keydown', (e) => {
+  // El input roba el foco del teclado del juego: evita que Enter/teclas
+  // lleguen al handler global.
+  e.stopPropagation();
+  if (e.key === 'Enter') { e.preventDefault(); saveScoreEntry(); }
+});
+resetScoresBtn.addEventListener('click', () => {
+  try { localStorage.removeItem(SCORES_KEY); } catch (e) { /* ignora */ }
+  pendingScoreEntry = null;
+  nameEntry.classList.add('hidden');
+  renderScores();
+});
 
 applyTheme();
 applyMute();

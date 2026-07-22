@@ -152,6 +152,21 @@
           </fieldset>
         </div>
 
+        <div id="name-entry" class="name-entry hidden">
+          <p class="name-entry-label">¡Nuevo récord! Escribe tu nombre:</p>
+          <div class="name-entry-row">
+            <input type="text" id="name-input" maxlength="12" placeholder="AAA" autocomplete="off" />
+            <button id="save-score-btn">Guardar</button>
+          </div>
+        </div>
+
+        <div id="records" class="records hidden">
+          <h3 class="records-title">Mejores puntuaciones</h3>
+          <ol id="records-list" class="records-list"></ol>
+          <p id="records-stats" class="records-stats"></p>
+          <button id="reset-scores-btn" class="reset-scores-btn">Resetear récords</button>
+        </div>
+
         <button id="restart-btn">Jugar</button>
       </div>
     </div>
