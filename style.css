@@ -48,6 +48,36 @@ body.light {
   --accent-glow: rgba(59, 91, 219, 0.35);
 }
 
+/* ---- Skins (ortogonales al tema claro/oscuro) ---- */
+/* Retro no define reglas: usa el chrome por defecto (regresión cero visual). */
+body.skin-neon {
+  --bg: #04040a;
+  --surface: #05060d;
+  --border: #123540;
+  --board-shadow: rgba(0, 234, 255, 0.28);
+}
+body.light.skin-neon {
+  --bg: #0a0a14;
+}
+
+body.skin-pastel {
+  --surface: #2a2536;
+  --board-shadow: rgba(180, 150, 220, 0.28);
+}
+body.light.skin-pastel {
+  --surface: #f4eefb;
+  --board-shadow: rgba(180, 150, 220, 0.35);
+}
+
+body.skin-pixel {
+  --surface: #17170f;
+  --board-shadow: rgba(0, 0, 0, 0.55);
+}
+body.light.skin-pixel {
+  --surface: #e8e4d2;
+  --board-shadow: rgba(60, 50, 20, 0.3);
+}
+
 body {
   background: var(--bg);
   color: var(--fg);
@@ -95,6 +125,55 @@ body {
   border-radius: 4px;
   box-shadow: 0 0 40px var(--board-shadow);
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* ---- Selector de skin ---- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skin-select-label {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.skin-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.skin-select:hover {
+  border-color: var(--accent);
+}
+
+.skin-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.skin-select option {
+  background: var(--surface);
+  color: var(--fg);
 }
 
 /* ---- Toggle de tema ---- */
