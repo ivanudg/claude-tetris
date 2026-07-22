@@ -201,6 +201,13 @@ const skillMenu = document.getElementById('skill-menu');
 const skillList = document.getElementById('skill-list');
 const skillEnergyFill = document.getElementById('skill-energy-fill');
 const skillEnergyValueEl = document.getElementById('skill-energy-value');
+const pauseMenu = document.getElementById('pause-menu');
+const startLevelSelect = document.getElementById('start-level-select');
+const startLevelSelectMenu = document.getElementById('start-level-select-menu');
+const resumeBtn = document.getElementById('resume-btn');
+const pauseRestartBtn = document.getElementById('pause-restart-btn');
+const controlsToggleBtn = document.getElementById('controls-toggle-btn');
+const pauseControls = document.getElementById('pause-controls');
 
 const THEME_KEY = 'tetris-theme';
 const GRID_COLORS = { dark: '#22222e', light: '#d7d7e6' };
@@ -222,6 +229,11 @@ let shakeRemaining = 0, shakeMagnitude = 0, flashRemaining = 0, flashColor = '#f
 // init(), igual que el tema y el silencio: init() resetea la partida, no la
 // configuración elegida.
 let challenge = cloneChallenge(CHALLENGE_DEFAULTS);
+// Nivel con el que arranca la próxima partida. Como `challenge`, es
+// configuración: sobrevive a init() y lo fija el selector del menú de pausa /
+// principal vía setStartLevel().
+let startLevel = 1;
+const START_LEVEL_MAX = 15;
 let timeRemaining, garbageAccum, warnedTime, won;
 // Lock delay de la pieza activa. `lockTimer > 0` significa "apoyada".
 let lockTimer, lockResets;
@@ -423,8 +435,10 @@ function resolveScoring({ cleared, spin, perfect, isPower, rows }) {
   score += gained;
   lines += cleared;
   addEnergy(ENERGY_GAIN[Math.min(cleared, ENERGY_GAIN.length - 1)]);
-  level = Math.floor(lines / 10) + 1;
-  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
+  // Reanclado a `startLevel`: subir 10 líneas sube un nivel sobre el inicial,
+  // que puede ser > 1. Con startLevel = 1 es idéntico a la fórmula clásica.
+  level = startLevel + Math.floor(lines / 10);
+  dropInterval = levelToDropInterval(level);
   if (cleared === 4) pendingMonomino = true; // Tetris: recompensa con bloque 1x1
   linesSincePowerUp += cleared;
   while (linesSincePowerUp >= POWERUP_EVERY) {
@@ -622,6 +636,12 @@ function restoreSnapshot() {
   lastKick = 0;
   shownCombo = -1;
   undoSnapshot = null; // sin encadenar rebobinados
+}
+
+// Curva de velocidad: baja 90 ms por nivel hasta el suelo de 100 ms. Único
+// sitio con la fórmula, la comparten init() y resolveScoring().
+function levelToDropInterval(lvl) {
+  return Math.max(100, 1000 - (lvl - 1) * 90);
 }
 
 // La Distorsión Temporal no toca `dropInterval`: resolveScoring() lo recalcula
@@ -1320,16 +1340,31 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
-    overlay.classList.add('hidden');
-    lastTime = performance.now();
+    pauseMenu.classList.add('hidden');
+    lastTime = performance.now(); // evita un dt gigante al reanudar
     loop(lastTime);
   } else {
+    draw(); // deja el último fotograma pintado bajo el overlay
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    showOverlay(false);
-    restartBtn.textContent = 'Reanudar';
+    startLevelSelect.value = startLevel;   // refleja el valor vigente
+    pauseControls.classList.add('hidden'); // los controles arrancan colapsados
+    pauseMenu.classList.remove('hidden');
   }
+}
+
+// Reinicia sin recargar desde el menú de pausa: reusa el `challenge` vigente e
+// init() lee `startLevel`.
+function restartFromPause() {
+  paused = false;
+  pauseMenu.classList.add('hidden');
+  init();
+}
+
+// Fija el nivel inicial y mantiene ambos selectores en sync con la variable.
+function setStartLevel(n) {
+  startLevel = n;
+  startLevelSelect.value = n;
+  startLevelSelectMenu.value = n;
 }
 
 // Relojes del objetivo activo. Se llama solo desde loop() y solo cuando el
@@ -1401,10 +1436,10 @@ function init() {
   if (challenge.mutators.puzzle) applyPuzzleLayout();
   score = 0;
   lines = 0;
-  level = 1;
+  level = startLevel;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  dropInterval = levelToDropInterval(level);
   dropAccum = 0;
   linesSincePowerUp = 0;
   pendingPowerUp = false;
@@ -1429,6 +1464,7 @@ function init() {
   undoSnapshot = null;
   skillMenuOpen = false;
   skillMenu.classList.add('hidden');
+  pauseMenu.classList.add('hidden');
   // Estado del desafío. `challenge` no se resetea: lo fija startGame().
   timeRemaining = challenge.mode === 'timeAttack' ? challenge.timeLimitMs : 0;
   garbageAccum = 0;
@@ -1455,7 +1491,9 @@ document.addEventListener('keydown', e => {
   ensureAudio(); // primer gesto del usuario: desbloquea el AudioContext
   // El menú de habilidades captura el teclado entero: la partida está congelada.
   if (skillMenuOpen) { handleSkillMenuKey(e); return; }
-  if (e.code === 'KeyP') { togglePause(); return; }
+  // P y Escape abren/cierran la pausa. Van tras el desvío de habilidades, así
+  // Esc cierra ese menú primero. El guard de abajo bloquea el resto de inputs.
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
@@ -1499,10 +1537,10 @@ document.addEventListener('keydown', e => {
   updateHUD();
 });
 
-// Un único botón para tres estados del overlay: menú, pausa y fin de partida.
+// El botón de #overlay despacha dos estados: menú (con config) y fin de partida
+// (sin config). La pausa vive en su propio overlay #pause-menu.
 restartBtn.addEventListener('click', () => {
   if (!challengeConfig.classList.contains('hidden')) startGame();
-  else if (paused) togglePause();
   else showMenu();
 });
 // El selector de modo solo tiene sentido con su objetivo: refleja en el menú
@@ -1510,6 +1548,26 @@ restartBtn.addEventListener('click', () => {
 modeSelect.addEventListener('change', () => {
   challengeConfig.dataset.mode = modeSelect.value;
 });
+
+// Menú de pausa: botones y selector de nivel inicial.
+resumeBtn.addEventListener('click', () => togglePause());
+pauseRestartBtn.addEventListener('click', restartFromPause);
+controlsToggleBtn.addEventListener('click', () => {
+  pauseControls.classList.toggle('hidden');
+});
+startLevelSelect.addEventListener('change', () => setStartLevel(parseInt(startLevelSelect.value, 10)));
+startLevelSelectMenu.addEventListener('change', () => setStartLevel(parseInt(startLevelSelectMenu.value, 10)));
+
+// Puebla ambos selectores con niveles 1–START_LEVEL_MAX.
+for (let n = 1; n <= START_LEVEL_MAX; n++) {
+  for (const sel of [startLevelSelect, startLevelSelectMenu]) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    sel.appendChild(opt);
+  }
+}
+setStartLevel(startLevel);
 
 themeToggle.addEventListener('click', toggleTheme);
 muteToggle.addEventListener('click', toggleMute);
